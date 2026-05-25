@@ -30,6 +30,9 @@ export interface AudioStoreState {
   trackPeaks: number[];
   trackProgress: number[];
   trackWaveforms: (Float32Array | null)[];
+  cpuAvgPct: number;
+  cpuMaxPct: number;
+  cpuOverruns: number;
   selectedTrack: number;
   monitor: number;
   statusMsg: string;
@@ -73,6 +76,9 @@ export const useAudioStore = create<AudioStoreState>(() => ({
   trackPeaks: Array.from({ length: NUM_TRACKS }, () => 0),
   trackProgress: Array.from({ length: NUM_TRACKS }, () => 0),
   trackWaveforms: Array.from({ length: NUM_TRACKS }, () => null),
+  cpuAvgPct: 0,
+  cpuMaxPct: 0,
+  cpuOverruns: 0,
   selectedTrack: 0,
   monitor: 0,
   statusMsg: '',
@@ -141,6 +147,9 @@ engine.setCallbacks({
       beatInMeasure: m.beatInMeasure,
       beatProgress: m.beatProgress,
       countInRemainingMs: m.countInRemainingMs,
+      cpuAvgPct: m.cpuAvgPct,
+      cpuMaxPct: m.cpuMaxPct,
+      cpuOverruns: m.cpuOverruns,
     });
   },
   onLatency(ms: number) {

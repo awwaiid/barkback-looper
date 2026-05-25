@@ -31,6 +31,9 @@ export interface MetersData {
   beatInMeasure: number;
   beatProgress: number; // 0..1 within current beat
   countInRemainingMs: number; // ms remaining on the longest active count-in, 0 if none
+  cpuAvgPct: number;  // mean process() time / block budget over the last window
+  cpuMaxPct: number;  // worst process() time / block budget in the last window
+  cpuOverruns: number; // count of blocks that exceeded budget since engine start
 }
 
 export type EngineMessage = EngineState | MetersData;

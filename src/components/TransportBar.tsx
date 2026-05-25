@@ -16,6 +16,9 @@ export function TransportBar() {
   const growFrames = useAudioStore(s => s.growFrames);
   const loopSeconds = useAudioStore(selectLoopSeconds);
   const progress = useAudioStore(selectLoopProgress);
+  const cpuAvg = useAudioStore(s => s.cpuAvgPct);
+  const cpuMax = useAudioStore(s => s.cpuMaxPct);
+  const cpuOverruns = useAudioStore(s => s.cpuOverruns);
 
   const recording = loopFrames === 0 && growFrames > 0;
   const growSeconds = sampleRate > 0 ? growFrames / sampleRate : 0;
@@ -51,6 +54,15 @@ export function TransportBar() {
             <span>latency: <strong>{latencyMs.toFixed(0)} ms</strong></span>
           )}
           {sampleRate > 0 && <span>{sampleRate} Hz</span>}
+          {cpuAvg > 0 && (
+            <span
+              className={cpuMax > 80 ? 'cpu-warn' : ''}
+              title={cpuOverruns > 0 ? `${cpuOverruns} overruns since start` : 'worklet CPU load'}
+            >
+              cpu: <strong>{cpuAvg.toFixed(0)}%</strong> <span className="muted">max {cpuMax.toFixed(0)}%</span>
+              {cpuOverruns > 0 && <span className="cpu-warn"> · {cpuOverruns} overrun{cpuOverruns === 1 ? '' : 's'}</span>}
+            </span>
+          )}
         </div>
       </div>
 

@@ -257,6 +257,9 @@ html, body, #root {
 }
 .loop-meta strong { color: var(--text); font-weight: 500; }
 
+.cpu-warn { color: var(--rec) !important; }
+.cpu-warn strong { color: var(--rec); }
+
 .input-label {
   font-family: var(--mono);
   color: var(--text-mute);

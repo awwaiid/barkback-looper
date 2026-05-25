@@ -73,10 +73,14 @@ class LooperProcessor extends AudioWorkletProcessor {
 
   meterCounter = 0;
   meterIntervalFrames = 0;
-  // Time-based exponential decay applied to peak meters each block.
-  // Half-life ~150 ms — long enough that transients stay visible, short
-  // enough that meters fall back to the noise floor between hits.
   peakDecayPerBlock = 1;
+
+  // CPU usage instrumentation
+  cpuSumMs = 0;       // sum of process() times since last meter
+  cpuCount = 0;       // # process() calls since last meter
+  cpuMaxMs = 0;       // worst process() time since last meter
+  cpuBudgetMs = 0;    // budget = block / sampleRate (most recent)
+  cpuOverruns = 0;    // lifetime overrun count
 
   constructor() {
     super();
@@ -488,6 +492,20 @@ class LooperProcessor extends AudioWorkletProcessor {
   }
 
   process(inputs: Float32Array[][], outputs: Float32Array[][]): boolean {
+    const cpuT0 = performance.now();
+    const result = this.doProcess(inputs, outputs);
+    const dtMs = performance.now() - cpuT0;
+    const block = (outputs[0]?.[0]?.length) ?? 128;
+    const budget = (block / sampleRate) * 1000;
+    this.cpuBudgetMs = budget;
+    this.cpuSumMs += dtMs;
+    this.cpuCount++;
+    if (dtMs > this.cpuMaxMs) this.cpuMaxMs = dtMs;
+    if (dtMs > budget) this.cpuOverruns++;
+    return result;
+  }
+
+  doProcess(inputs: Float32Array[][], outputs: Float32Array[][]): boolean {
     const input = inputs[0] ?? [];
     const output = outputs[0];
     const outL = output[0];
@@ -680,6 +698,13 @@ class LooperProcessor extends AudioWorkletProcessor {
           trackProgress[ti] = 0;
         }
       }
+      const cpuBudget = this.cpuBudgetMs > 0 ? this.cpuBudgetMs : (128 / sampleRate) * 1000;
+      const cpuAvg = this.cpuCount > 0 ? (this.cpuSumMs / this.cpuCount) / cpuBudget : 0;
+      const cpuMax = this.cpuMaxMs / cpuBudget;
+      this.cpuSumMs = 0;
+      this.cpuCount = 0;
+      this.cpuMaxMs = 0;
+
       this.port.postMessage({
         type: 'meters',
         inputPeak: this.inputPeak,
@@ -691,6 +716,9 @@ class LooperProcessor extends AudioWorkletProcessor {
         beatInMeasure: this.beatInMeasure,
         beatProgress: this.framesPerBeat > 0 ? this.beatFrame / this.framesPerBeat : 0,
         countInRemainingMs: countInMs,
+        cpuAvgPct: cpuAvg * 100,
+        cpuMaxPct: cpuMax * 100,
+        cpuOverruns: this.cpuOverruns,
       });
     }
 
