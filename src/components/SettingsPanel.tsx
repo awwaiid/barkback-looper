@@ -8,6 +8,9 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
   const allPlayTargets = useSettingsStore(s => s.allPlayTargets);
   const autoRec = useSettingsStore(s => s.autoRec);
   const threshold = useSettingsStore(s => s.autoRecThreshold);
+  const countInMeasures = useSettingsStore(s => s.countInMeasures);
+  const recQuantize = useSettingsStore(s => s.recQuantize);
+  const fixedLoopMeasures = useSettingsStore(s => s.fixedLoopMeasures);
 
   const toggleStopTarget = (i: number, on: boolean) => {
     const next = allStopTargets.slice();
@@ -97,7 +100,7 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
               <input
                 type="radio"
                 name="countIn"
-                checked={useSettingsStore.getState().countInMeasures === n}
+                checked={countInMeasures === n}
                 onChange={() => updateSettings({ countInMeasures: n })}
               />
               <span>{n === 0 ? 'off' : `${n} measure${n > 1 ? 's' : ''}`}</span>
@@ -118,7 +121,7 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
               <input
                 type="radio"
                 name="recQuantize"
-                checked={useSettingsStore.getState().recQuantize === q}
+                checked={recQuantize === q}
                 onChange={() => updateSettings({ recQuantize: q })}
               />
               <span><code>{q.toUpperCase()}</code></span>
@@ -138,7 +141,7 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
             <input
               type="radio"
               name="loopLength"
-              checked={useSettingsStore.getState().fixedLoopMeasures === 0}
+              checked={fixedLoopMeasures === 0}
               onChange={() => updateSettings({ fixedLoopMeasures: 0 })}
             />
             <span><code>AUTO</code></span>
@@ -148,7 +151,7 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
               <input
                 type="radio"
                 name="loopLength"
-                checked={useSettingsStore.getState().fixedLoopMeasures === n}
+                checked={fixedLoopMeasures === n}
                 onChange={() => updateSettings({ fixedLoopMeasures: n })}
               />
               <span>{n} bar{n > 1 ? 's' : ''}</span>
