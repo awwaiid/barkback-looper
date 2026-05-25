@@ -1,5 +1,8 @@
+import { useState } from 'react';
 import { useSettingsStore, updateSettings, resetSettings } from '../settings/settings.ts';
 import { NUM_TRACKS } from '../audio/types.ts';
+import { engine } from '../audio/store.ts';
+import type { LatencyTestResult } from '../audio/engine.ts';
 
 export function SettingsPanel({ onClose }: { onClose: () => void }) {
   const recAction = useSettingsStore(s => s.recAction);
@@ -11,6 +14,29 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
   const countInMeasures = useSettingsStore(s => s.countInMeasures);
   const recQuantize = useSettingsStore(s => s.recQuantize);
   const fixedLoopMeasures = useSettingsStore(s => s.fixedLoopMeasures);
+  const latencyCompensationMs = useSettingsStore(s => s.latencyCompensationMs);
+
+  const [testResult, setTestResult] = useState<LatencyTestResult | null>(null);
+  const [testing, setTesting] = useState(false);
+
+  const runTest = async () => {
+    setTesting(true);
+    setTestResult(null);
+    try {
+      const r = await engine.runLatencyTest();
+      setTestResult(r);
+    } catch (e: any) {
+      setTestResult({ success: false, roundTripMs: 0, peakLevel: 0, reason: e?.message ?? String(e) });
+    } finally {
+      setTesting(false);
+    }
+  };
+
+  const applyTest = () => {
+    if (testResult?.success) {
+      updateSettings({ latencyCompensationMs: testResult.roundTripMs });
+    }
+  };
 
   const toggleStopTarget = (i: number, on: boolean) => {
     const next = allStopTargets.slice();
@@ -185,6 +211,66 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
             {(20 * Math.log10(Math.max(threshold, 0.0001))).toFixed(1)} dB
           </span>
         </label>
+      </div>
+
+      <div className="midi-section">
+        <h3>Latency Calibration</h3>
+        <p className="muted setting-help">
+          Round-trip latency (output → speaker → mic → input) shifts incoming
+          audio in time. Tracks 2–4 record what you played in response to the
+          loop, but it arrives <em>roundTrip</em> ms late, so on playback the
+          new layer drifts. Setting a non-zero value shifts recordings back in
+          time by that amount so they line up. Per machine — save sessions
+          carry the audio, not the calibration.
+        </p>
+        <label className="setting-row">
+          <span style={{ minWidth: '120px' }}>compensation</span>
+          <input
+            type="number"
+            min={0}
+            max={1000}
+            step={1}
+            value={Math.round(latencyCompensationMs)}
+            onChange={(e) => updateSettings({ latencyCompensationMs: Math.max(0, parseFloat(e.currentTarget.value) || 0) })}
+            style={{ width: '90px' }}
+          />
+          <span className="muted">ms</span>
+          <input
+            type="range" min="0" max="200" step="1"
+            value={latencyCompensationMs}
+            onChange={(e) => updateSettings({ latencyCompensationMs: parseFloat(e.currentTarget.value) })}
+          />
+        </label>
+        <div className="setting-row" style={{ marginTop: '10px' }}>
+          <button className="btn" disabled={testing} onClick={runTest}>
+            {testing ? 'Measuring…' : 'Measure round-trip'}
+          </button>
+          {testResult && testResult.success && (
+            <>
+              <span style={{ fontFamily: 'var(--mono)' }}>
+                measured: <strong>{testResult.roundTripMs.toFixed(1)} ms</strong>{' '}
+                <span className="muted">(peak {(testResult.peakLevel * 100).toFixed(0)}%)</span>
+              </span>
+              <button
+                className="btn btn-primary"
+                onClick={applyTest}
+                disabled={Math.abs(testResult.roundTripMs - latencyCompensationMs) < 0.5}
+              >
+                Apply
+              </button>
+            </>
+          )}
+          {testResult && !testResult.success && (
+            <span className="status-err">{testResult.reason}</span>
+          )}
+        </div>
+        <p className="muted setting-help" style={{ marginTop: '8px' }}>
+          To measure: place the mic where it can pick up the speakers (laptop
+          built-in pair works), turn output up so the test tone is clearly
+          audible, then click <em>Measure round-trip</em>. A 5 ms tone is
+          emitted; the detected delay is your round-trip latency. Click
+          <em> Apply</em> to set it.
+        </p>
       </div>
 
       <div className="midi-section">

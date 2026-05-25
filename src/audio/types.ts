@@ -65,7 +65,17 @@ export type WorkletCommand =
   | {
       type: 'provideRecBuffers';
       buffers: { track: number; l: ArrayBuffer; r: ArrayBuffer }[];
-    };
+    }
+  | { type: 'setLatencyCompensation'; ms: number }
+  | { type: 'startLatencyTest'; reqId: number };
+
+export interface LatencyTestReply {
+  type: 'latencyTestResult';
+  reqId: number;
+  buffer: ArrayBuffer;        // captured input samples (mono, Float32)
+  sampleRate: number;
+  impulseStartFrame: number;  // sample index where the impulse output began
+}
 
 export interface BufferReply {
   type: 'buffer';

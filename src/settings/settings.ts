@@ -19,6 +19,7 @@ export interface Settings {
   countInMeasures: number;      // 0, 1, or 2
   recQuantize: RecQuantize;
   fixedLoopMeasures: number;    // 0 = auto, else fixed
+  latencyCompensationMs: number; // round-trip latency to compensate for at record time
 }
 
 const DEFAULTS: Settings = {
@@ -35,6 +36,7 @@ const DEFAULTS: Settings = {
   countInMeasures: 0,
   recQuantize: 'off',
   fixedLoopMeasures: 0,
+  latencyCompensationMs: 0,
 };
 
 const KEY = 'spindoctor.settings.v1';

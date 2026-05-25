@@ -66,6 +66,27 @@ class LooperProcessor extends AudioWorkletProcessor {
   beatFrame = 0;
   beatInMeasure = 0;
 
+  // Round-trip latency compensation: shift recordings backwards in time by
+  // this many frames so a note played in response to playback ends up
+  // aligned in the buffer with the playback that prompted it.
+  latencyCompFrames = 0;
+
+  // 1-second ring buffer of recent input. Used to look up samples from
+  // up to 1 s in the past so we can write "compensated" audio to recordings.
+  preRollL: Float32Array = new Float32Array(0);
+  preRollR: Float32Array = new Float32Array(0);
+  preRollSize = 0;
+  preRollPos = 0;
+
+  // Acoustic loopback latency test state
+  testPhase: 'idle' | 'running' = 'idle';
+  testBuffer: Float32Array | null = null;
+  testSampleIdx = 0;
+  testImpulseLen = 0;
+  testCaptureLen = 0;
+  testReqId = 0;
+  testMonitorBackup = 0;
+
   clickActive = false;
   clickPhase = 0;
   clickLength = 0;
@@ -86,11 +107,49 @@ class LooperProcessor extends AudioWorkletProcessor {
     super();
     this.meterIntervalFrames = Math.floor(sampleRate / 30);
     this.clickLength = Math.floor(sampleRate * 0.06);
-    // Assume Web Audio's standard 128-frame render quantum for decay sizing.
     const blockMs = (128 / sampleRate) * 1000;
     this.peakDecayPerBlock = Math.pow(0.5, blockMs / 150);
+    this.preRollSize = sampleRate; // 1 second
+    this.preRollL = new Float32Array(this.preRollSize);
+    this.preRollR = new Float32Array(this.preRollSize);
     this.recomputeTempo();
     this.port.onmessage = (e: MessageEvent) => this.onMessage(e.data);
+  }
+
+  beginLatencyTest(reqId: number) {
+    if (this.testPhase === 'running') return;
+    this.testImpulseLen = Math.floor(sampleRate * 0.005); // 5 ms tone burst
+    this.testCaptureLen = Math.floor(sampleRate * 0.15);  // 150 ms total capture
+    // 150 ms is enough for any realistic round trip (USB interfaces top out
+    // around 30-40 ms; consumer onboard is 60-100 ms). Shorter capture =
+    // faster turnaround when the user clicks Measure.
+    this.testBuffer = new Float32Array(this.testCaptureLen);
+    this.testSampleIdx = 0;
+    this.testReqId = reqId;
+    this.testMonitorBackup = this.monitor;
+    this.monitor = 0; // avoid feeding live input back during the test
+    this.testPhase = 'running';
+  }
+
+  endLatencyTest() {
+    if (!this.testBuffer) {
+      this.testPhase = 'idle';
+      return;
+    }
+    const buf = this.testBuffer.buffer;
+    this.testBuffer = null;
+    this.testPhase = 'idle';
+    this.monitor = this.testMonitorBackup;
+    this.port.postMessage(
+      {
+        type: 'latencyTestResult',
+        reqId: this.testReqId,
+        buffer: buf,
+        sampleRate,
+        impulseStartFrame: 0,
+      },
+      [buf],
+    );
   }
 
   recomputeTempo() {
@@ -168,6 +227,14 @@ class LooperProcessor extends AudioWorkletProcessor {
         this.recQuantize = msg.recQuantize;
         this.fixedLoopMeasures = Math.max(0, msg.fixedLoopMeasures);
         this.recomputeTempo();
+        break;
+      case 'setLatencyCompensation': {
+        const frames = Math.floor((msg.ms / 1000) * sampleRate);
+        this.latencyCompFrames = Math.max(0, Math.min(this.preRollSize - 1, frames));
+        break;
+      }
+      case 'startLatencyTest':
+        this.beginLatencyTest(msg.reqId);
         break;
       case 'provideRecBuffers':
         // Main thread pre-allocates per-track recording buffers and
@@ -518,6 +585,37 @@ class LooperProcessor extends AudioWorkletProcessor {
     const hasInput = !!inL;
     const monitor = this.monitor;
 
+    // ---- Acoustic latency test fast path ----
+    // Emits a short tone burst on output, records input for 500 ms,
+    // then ships the captured buffer back to the main thread for analysis.
+    if (this.testPhase === 'running' && this.testBuffer) {
+      for (let i = 0; i < block; i++) {
+        if (this.testSampleIdx >= this.testCaptureLen) {
+          outL[i] = 0;
+          if (outR !== outL) outR[i] = 0;
+          continue;
+        }
+        const inSample = hasInput ? inL[i] : 0;
+        this.testBuffer[this.testSampleIdx] = inSample;
+        if (this.testSampleIdx < this.testImpulseLen) {
+          const n = this.testSampleIdx;
+          const win = 0.5 - 0.5 * Math.cos((2 * Math.PI * n) / this.testImpulseLen);
+          const tone = Math.sin((2 * Math.PI * 1000 * n) / sampleRate);
+          const v = 0.5 * win * tone;
+          outL[i] = v;
+          if (outR !== outL) outR[i] = v;
+        } else {
+          outL[i] = 0;
+          if (outR !== outL) outR[i] = 0;
+        }
+        this.testSampleIdx++;
+        if (this.testSampleIdx >= this.testCaptureLen) {
+          this.endLatencyTest();
+        }
+      }
+      return true;
+    }
+
     const decay = this.peakDecayPerBlock;
     let inPeak = this.inputPeak * decay;
     for (let ti = 0; ti < NUM_TRACKS; ti++) {
@@ -567,6 +665,11 @@ class LooperProcessor extends AudioWorkletProcessor {
     let fixedAutoFinishPending = false;
     let ph = this.playhead;
 
+    const compFrames = this.latencyCompFrames;
+    const preRollSize = this.preRollSize;
+    const preRollL = this.preRollL;
+    const preRollR = this.preRollR;
+
     for (let i = 0; i < block; i++) {
       const sL = hasInput ? inL[i] : 0;
       const sR = hasInput ? inR[i] : 0;
@@ -579,6 +682,16 @@ class LooperProcessor extends AudioWorkletProcessor {
       let mixL = monitor * sL;
       let mixR = monitor * sR;
 
+      // Write live input into pre-roll, then read compFrames in the past
+      // for what to actually commit to any recording. Monitor uses the
+      // live sample so the user doesn't hear themselves delayed.
+      preRollL[this.preRollPos] = sL;
+      preRollR[this.preRollPos] = sR;
+      const compIdx = (this.preRollPos - compFrames + preRollSize) % preRollSize;
+      const recL = compFrames > 0 ? preRollL[compIdx] : sL;
+      const recR = compFrames > 0 ? preRollR[compIdx] : sR;
+      this.preRollPos = (this.preRollPos + 1) % preRollSize;
+
       // Each track: playback + record into either grow-buffer or existing buf.
       for (let ti = 0; ti < NUM_TRACKS; ti++) {
         const t = this.tracks[ti];
@@ -586,8 +699,8 @@ class LooperProcessor extends AudioWorkletProcessor {
         // Recording into grow-buffer
         if (t.mode === 'recording' && t.growL) {
           if (t.growIdx < t.growL.length) {
-            t.growL[t.growIdx] = sL;
-            t.growR![t.growIdx] = sR;
+            t.growL[t.growIdx] = recL;
+            t.growR![t.growIdx] = recR;
             t.growIdx++;
             if (ti === 0 && fixedFrames > 0 && this.masterFrames === 0 && t.growIdx >= fixedFrames) {
               fixedAutoFinishPending = true;
@@ -609,8 +722,8 @@ class LooperProcessor extends AudioWorkletProcessor {
               if (tp > t.peak) t.peak = tp;
             }
             if (t.mode === 'overdub') {
-              t.bufL[trackPos] = t.bufL[trackPos] + sL;
-              t.bufR[trackPos] = t.bufR[trackPos] + sR;
+              t.bufL[trackPos] = t.bufL[trackPos] + recL;
+              t.bufR[trackPos] = t.bufR[trackPos] + recR;
             }
           }
         }

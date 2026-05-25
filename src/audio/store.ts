@@ -169,6 +169,7 @@ function pushSettings(s: ReturnType<typeof currentSettings>) {
     recQuantize: s.recQuantize,
     fixedLoopMeasures: s.fixedLoopMeasures,
   });
+  engine.setLatencyCompensation(s.latencyCompensationMs);
 }
 
 export async function startEngine(deviceId?: string) {

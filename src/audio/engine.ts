@@ -1,7 +1,21 @@
-import type { BufferReply, EngineState, MetersData, TrackAction, WorkletCommand } from './types.ts';
+import type {
+  BufferReply,
+  EngineState,
+  LatencyTestReply,
+  MetersData,
+  TrackAction,
+  WorkletCommand,
+} from './types.ts';
 import { NUM_TRACKS } from './types.ts';
 import { MAX_RECORDING_SECONDS } from './constants.ts';
 import workletUrl from './looper-worklet.ts?worker&url';
+
+export interface LatencyTestResult {
+  success: boolean;
+  roundTripMs: number;
+  peakLevel: number;
+  reason?: string;
+}
 
 export interface EngineCallbacks {
   onState?: (s: EngineState) => void;
@@ -17,6 +31,7 @@ export class LooperEngine {
   cb: EngineCallbacks = {};
   ready = false;
   bufferRequests = new Map<number, (reply: BufferReply) => void>();
+  latencyTestRequests = new Map<number, (reply: LatencyTestReply) => void>();
   nextReqId = 1;
 
   setCallbacks(cb: EngineCallbacks) {
@@ -57,6 +72,12 @@ export class LooperEngine {
         const pending = this.bufferRequests.get(d.reqId);
         if (pending) {
           this.bufferRequests.delete(d.reqId);
+          pending(d);
+        }
+      } else if (d.type === 'latencyTestResult') {
+        const pending = this.latencyTestRequests.get(d.reqId);
+        if (pending) {
+          this.latencyTestRequests.delete(d.reqId);
           pending(d);
         }
       }
@@ -167,4 +188,62 @@ export class LooperEngine {
   }) {
     this.send({ type: 'setTempo', ...args });
   }
+
+  setLatencyCompensation(ms: number) {
+    this.send({ type: 'setLatencyCompensation', ms });
+  }
+
+  async runLatencyTest(): Promise<LatencyTestResult> {
+    if (!this.node) {
+      return { success: false, roundTripMs: 0, peakLevel: 0, reason: 'Engine not started.' };
+    }
+    const reqId = this.nextReqId++;
+    const reply = await new Promise<LatencyTestReply>((resolve, reject) => {
+      // Capture is 250 ms of audio; give it 5 s wall-clock to cover slow systems.
+      const to = setTimeout(() => {
+        this.latencyTestRequests.delete(reqId);
+        reject(new Error('Latency test timed out'));
+      }, 5000);
+      this.latencyTestRequests.set(reqId, (r) => { clearTimeout(to); resolve(r); });
+      this.send({ type: 'startLatencyTest', reqId });
+    });
+    return analyzeLatencyTest(reply);
+  }
+}
+
+// Find the round-trip latency from a captured input buffer. The buffer
+// starts the moment the worklet began emitting its 5 ms tone burst.
+function analyzeLatencyTest(reply: LatencyTestReply): LatencyTestResult {
+  const data = new Float32Array(reply.buffer);
+  const sr = reply.sampleRate;
+  // Skip the first 1 ms to ignore any inline electrical crosstalk.
+  const skip = Math.floor(sr * 0.001);
+  let peakIdx = -1;
+  let peak = 0;
+  for (let i = skip; i < data.length; i++) {
+    const v = Math.abs(data[i]);
+    if (v > peak) {
+      peak = v;
+      peakIdx = i;
+    }
+  }
+  // Threshold is generous so quiet pickup still registers.
+  if (peak < 0.01 || peakIdx < 0) {
+    return {
+      success: false,
+      roundTripMs: 0,
+      peakLevel: peak,
+      reason: 'No impulse detected. Place the mic closer to the speaker, raise the input gain, and try again.',
+    };
+  }
+  // Refine: walk back from peak to find the threshold-crossing onset, so we
+  // measure first-arrival rather than the loudest reflection.
+  const onsetThreshold = Math.max(0.005, peak * 0.25);
+  let onsetIdx = peakIdx;
+  for (let i = peakIdx; i >= skip; i--) {
+    if (Math.abs(data[i]) >= onsetThreshold) onsetIdx = i;
+    else break;
+  }
+  const ms = (onsetIdx / sr) * 1000;
+  return { success: true, roundTripMs: ms, peakLevel: peak };
 }
