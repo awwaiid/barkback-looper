@@ -25,6 +25,9 @@ export interface MetersData {
   playhead: number;
   loopFrames: number;
   growFrames: number;
+  beatInMeasure: number;
+  beatProgress: number; // 0..1 within current beat
+  countInRemainingMs: number; // ms remaining on the longest active count-in, 0 if none
 }
 
 export type EngineMessage = EngineState | MetersData;
@@ -42,7 +45,17 @@ export type WorkletCommand =
   | { type: 'getMix'; reqId: number }
   | { type: 'loadBuffer'; track: number; l: ArrayBuffer; r: ArrayBuffer }
   | { type: 'setRecAction'; value: 'rec-play' | 'rec-overdub' }
-  | { type: 'setAutoRec'; enabled: boolean; threshold: number };
+  | { type: 'setAutoRec'; enabled: boolean; threshold: number }
+  | {
+      type: 'setTempo';
+      bpm: number;
+      beatsPerMeasure: number;
+      metronomeOn: boolean;
+      metronomeLevel: number;
+      countInMeasures: number;
+      recQuantize: 'off' | 'beat' | 'measure';
+      fixedLoopMeasures: number;
+    };
 
 export interface BufferReply {
   type: 'buffer';

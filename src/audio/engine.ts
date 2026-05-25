@@ -134,4 +134,16 @@ export class LooperEngine {
   setAutoRec(enabled: boolean, threshold: number) {
     this.send({ type: 'setAutoRec', enabled, threshold });
   }
+
+  setTempo(args: {
+    bpm: number;
+    beatsPerMeasure: number;
+    metronomeOn: boolean;
+    metronomeLevel: number;
+    countInMeasures: number;
+    recQuantize: 'off' | 'beat' | 'measure';
+    fixedLoopMeasures: number;
+  }) {
+    this.send({ type: 'setTempo', ...args });
+  }
 }

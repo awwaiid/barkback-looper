@@ -3,6 +3,7 @@ import { NUM_TRACKS } from '../audio/types.ts';
 
 export type RecAction = 'rec-play' | 'rec-overdub';
 export type TrackPlayMode = 'multi' | 'single';
+export type RecQuantize = 'off' | 'beat' | 'measure';
 
 export interface Settings {
   recAction: RecAction;
@@ -10,7 +11,14 @@ export interface Settings {
   allStopTargets: boolean[];
   allPlayTargets: boolean[];
   autoRec: boolean;
-  autoRecThreshold: number; // 0..1 linear peak
+  autoRecThreshold: number;
+  bpm: number;
+  beatsPerMeasure: number;
+  metronomeOn: boolean;
+  metronomeLevel: number;       // 0..1
+  countInMeasures: number;      // 0, 1, or 2
+  recQuantize: RecQuantize;
+  fixedLoopMeasures: number;    // 0 = auto, else fixed
 }
 
 const DEFAULTS: Settings = {
@@ -20,6 +28,13 @@ const DEFAULTS: Settings = {
   allPlayTargets: Array.from({ length: NUM_TRACKS }, () => true),
   autoRec: false,
   autoRecThreshold: 0.05,
+  bpm: 120,
+  beatsPerMeasure: 4,
+  metronomeOn: false,
+  metronomeLevel: 0.4,
+  countInMeasures: 0,
+  recQuantize: 'off',
+  fixedLoopMeasures: 0,
 };
 
 const KEY = 'spindoctor.settings.v1';

@@ -19,6 +19,9 @@ export interface AudioStoreState {
   loopFrames: number;
   playhead: number;
   growFrames: number;
+  beatInMeasure: number;
+  beatProgress: number;
+  countInRemainingMs: number;
   latencyMs: number;
   tracks: TrackSnapshot[];
   inputPeak: number;
@@ -58,6 +61,9 @@ export const useAudioStore = create<AudioStoreState>(() => ({
   loopFrames: 0,
   playhead: 0,
   growFrames: 0,
+  beatInMeasure: 0,
+  beatProgress: 0,
+  countInRemainingMs: 0,
   latencyMs: 0,
   tracks: Array.from({ length: NUM_TRACKS }, emptyTrack),
   inputPeak: 0,
@@ -127,6 +133,9 @@ engine.setCallbacks({
       trackPeaks: [...m.trackPeaks],
       playhead: m.playhead,
       growFrames: m.growFrames,
+      beatInMeasure: m.beatInMeasure,
+      beatProgress: m.beatProgress,
+      countInRemainingMs: m.countInRemainingMs,
     });
   },
   onLatency(ms: number) {
@@ -134,14 +143,25 @@ engine.setCallbacks({
   },
 });
 
+function pushSettings(s: ReturnType<typeof currentSettings>) {
+  engine.setRecAction(s.recAction);
+  engine.setAutoRec(s.autoRec, s.autoRecThreshold);
+  engine.setTempo({
+    bpm: s.bpm,
+    beatsPerMeasure: s.beatsPerMeasure,
+    metronomeOn: s.metronomeOn,
+    metronomeLevel: s.metronomeLevel,
+    countInMeasures: s.countInMeasures,
+    recQuantize: s.recQuantize,
+    fixedLoopMeasures: s.fixedLoopMeasures,
+  });
+}
+
 export async function startEngine(deviceId?: string) {
   try {
     const monitor = useAudioStore.getState().monitor;
     await engine.start({ deviceId, monitor });
-    // Push current settings to the freshly-created worklet.
-    const s = currentSettings();
-    engine.setRecAction(s.recAction);
-    engine.setAutoRec(s.autoRec, s.autoRecThreshold);
+    pushSettings(currentSettings());
     useAudioStore.setState({ ready: true, contextRunning: true, statusMsg: '' });
   } catch (err: any) {
     useAudioStore.setState({ statusMsg: `Mic error: ${err?.message ?? err}` });
@@ -150,8 +170,7 @@ export async function startEngine(deviceId?: string) {
 
 onSettingsChange((s) => {
   if (!engine.ready) return;
-  engine.setRecAction(s.recAction);
-  engine.setAutoRec(s.autoRec, s.autoRecThreshold);
+  pushSettings(s);
 });
 
 export async function stopEngine() {

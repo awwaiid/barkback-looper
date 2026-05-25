@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { TrackStrip } from './TrackStrip.tsx';
 import { TransportBar } from './TransportBar.tsx';
+import { TempoBar } from './TempoBar.tsx';
 import { AudioSetup } from './AudioSetup.tsx';
 import { MidiPanel } from './MidiPanel.tsx';
 import { SessionPanel } from './SessionPanel.tsx';
@@ -102,6 +103,7 @@ export function Looper() {
       {showMidi && <MidiPanel />}
       {showSessions && <SessionPanel onClose={() => setShowSessions(false)} />}
 
+      <TempoBar />
       <TransportBar />
 
       <div className="tracks">

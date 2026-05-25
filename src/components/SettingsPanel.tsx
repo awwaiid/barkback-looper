@@ -86,6 +86,78 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
       </div>
 
       <div className="midi-section">
+        <h3>Count-In</h3>
+        <p className="muted setting-help">
+          When you tap REC, play this many measures of click first, then start recording.
+          Useful when you want a clean downbeat.
+        </p>
+        <div className="setting-choice setting-choice-row">
+          {[0, 1, 2].map(n => (
+            <label key={n}>
+              <input
+                type="radio"
+                name="countIn"
+                checked={useSettingsStore.getState().countInMeasures === n}
+                onChange={() => updateSettings({ countInMeasures: n })}
+              />
+              <span>{n === 0 ? 'off' : `${n} measure${n > 1 ? 's' : ''}`}</span>
+            </label>
+          ))}
+        </div>
+      </div>
+
+      <div className="midi-section">
+        <h3>Rec Quantize</h3>
+        <p className="muted setting-help">
+          Snap the recording start to the next beat or measure boundary so loops stay on grid.
+          Ignored if Count-In is on (count-in always aligns to a measure).
+        </p>
+        <div className="setting-choice setting-choice-row">
+          {(['off', 'beat', 'measure'] as const).map(q => (
+            <label key={q}>
+              <input
+                type="radio"
+                name="recQuantize"
+                checked={useSettingsStore.getState().recQuantize === q}
+                onChange={() => updateSettings({ recQuantize: q })}
+              />
+              <span><code>{q.toUpperCase()}</code></span>
+            </label>
+          ))}
+        </div>
+      </div>
+
+      <div className="midi-section">
+        <h3>Loop Length</h3>
+        <p className="muted setting-help">
+          AUTO = first record sets the loop length (default). Fixed = track 1 records exactly
+          N measures and then auto-cycles. Tracks 2–4 always conform to the master loop.
+        </p>
+        <div className="setting-choice setting-choice-row">
+          <label>
+            <input
+              type="radio"
+              name="loopLength"
+              checked={useSettingsStore.getState().fixedLoopMeasures === 0}
+              onChange={() => updateSettings({ fixedLoopMeasures: 0 })}
+            />
+            <span><code>AUTO</code></span>
+          </label>
+          {[1, 2, 4, 8, 16, 32].map(n => (
+            <label key={n}>
+              <input
+                type="radio"
+                name="loopLength"
+                checked={useSettingsStore.getState().fixedLoopMeasures === n}
+                onChange={() => updateSettings({ fixedLoopMeasures: n })}
+              />
+              <span>{n} bar{n > 1 ? 's' : ''}</span>
+            </label>
+          ))}
+        </div>
+      </div>
+
+      <div className="midi-section">
         <h3>Auto Rec</h3>
         <p className="muted setting-help">
           With Auto Rec on, REC arms the track. Recording starts the moment input crosses the threshold.
