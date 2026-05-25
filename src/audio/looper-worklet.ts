@@ -345,12 +345,18 @@ class LooperProcessor extends AudioWorkletProcessor {
   undo(idx: number) {
     const t = this.tracks[idx];
     if (t.undoL && t.undoR) {
+      // Two-state swap: toggle between the most recent overdub layer and
+      // the version just before it.
       const prevL = t.bufL;
       const prevR = t.bufR;
       t.bufL = t.undoL;
       t.bufR = t.undoR;
       t.undoL = prevL;
       t.undoR = prevR;
+    } else if (t.bufL) {
+      // Initial recording has no prior version to swap back to, so undo is
+      // equivalent to clearing the track.
+      this.clearTrack(idx);
     }
   }
 
@@ -545,7 +551,9 @@ class LooperProcessor extends AudioWorkletProcessor {
       hasAudio: t.bufL !== null || (t.growL !== null && t.growIdx > 0),
       gain: t.gain,
       durationFrames: t.bufL ? t.bufL.length : 0,
-      canUndo: t.undoL !== null,
+      // Undo is available whenever there's a swap snapshot (post-overdub)
+      // OR a finalized recording (the initial take, which undo will clear).
+      canUndo: t.undoL !== null || t.bufL !== null,
       cycles: t.cycles,
       cycleIndex: t.cycleIndex,
     }));

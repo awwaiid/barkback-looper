@@ -80,7 +80,12 @@ export function Looper() {
   }, []);
 
   return (
-    <div className="looper">
+    <div
+      className="looper"
+      // Suppress the long-press / right-click context menu so a held
+      // touch on a fader or button doesn't pop up "save image", etc.
+      onContextMenu={(e) => e.preventDefault()}
+    >
       <header className="app-header">
         <h1>
           <img src={`${import.meta.env.BASE_URL}logo.png`} alt="" className="app-logo" />

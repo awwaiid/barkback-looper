@@ -43,6 +43,22 @@ html, body, #root {
   max-width: 1400px;
   width: 100%;
   margin: 0 auto;
+  /* Suppress text selection on long-press; touch-hold otherwise highlights
+     button labels and triggers the long-press callout on touch screens.
+     Inputs override this below. */
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* Keep text inputs selectable so the user can place the cursor / select text. */
+.looper input[type="text"],
+.looper input[type="number"],
+.looper select,
+.looper textarea {
+  -webkit-user-select: text;
+  user-select: text;
+  -webkit-touch-callout: default;
 }
 
 .app-header {
