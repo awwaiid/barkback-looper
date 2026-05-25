@@ -559,16 +559,22 @@ class LooperProcessor extends AudioWorkletProcessor {
   }
 
   process(inputs: Float32Array[][], outputs: Float32Array[][]): boolean {
-    const cpuT0 = performance.now();
+    // performance.now() is not guaranteed in AudioWorkletGlobalScope; feature-detect
+    // and silently skip CPU measurement if it's not there.
+    const perf = (globalThis as any).performance;
+    const hasPerf = perf && typeof perf.now === 'function';
+    const cpuT0 = hasPerf ? perf.now() : 0;
     const result = this.doProcess(inputs, outputs);
-    const dtMs = performance.now() - cpuT0;
-    const block = (outputs[0]?.[0]?.length) ?? 128;
-    const budget = (block / sampleRate) * 1000;
-    this.cpuBudgetMs = budget;
-    this.cpuSumMs += dtMs;
-    this.cpuCount++;
-    if (dtMs > this.cpuMaxMs) this.cpuMaxMs = dtMs;
-    if (dtMs > budget) this.cpuOverruns++;
+    if (hasPerf) {
+      const dtMs = perf.now() - cpuT0;
+      const block = (outputs[0]?.[0]?.length) ?? 128;
+      const budget = (block / sampleRate) * 1000;
+      this.cpuBudgetMs = budget;
+      this.cpuSumMs += dtMs;
+      this.cpuCount++;
+      if (dtMs > this.cpuMaxMs) this.cpuMaxMs = dtMs;
+      if (dtMs > budget) this.cpuOverruns++;
+    }
     return result;
   }
 
