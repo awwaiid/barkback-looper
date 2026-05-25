@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import type { EngineState, MetersData, TrackSnapshot } from './types.ts';
 import { NUM_TRACKS } from './types.ts';
 import { LooperEngine } from './engine.ts';
-import { currentSettings, onSettingsChange } from '../settings/settings.ts';
+import { currentSettings, useSettingsStore } from '../settings/settings.ts';
 
 const emptyTrack = (): TrackSnapshot => ({
   mode: 'empty',
@@ -173,7 +173,7 @@ export async function startEngine(deviceId?: string) {
   }
 }
 
-onSettingsChange((s) => {
+useSettingsStore.subscribe((s) => {
   if (!engine.ready) return;
   pushSettings(s);
 });

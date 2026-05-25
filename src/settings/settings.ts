@@ -64,21 +64,12 @@ function persist(s: Settings) {
 
 export const useSettingsStore = create<Settings>(() => load());
 
-const listeners: Array<(s: Settings) => void> = [];
-
-export function onSettingsChange(fn: (s: Settings) => void): () => void {
-  listeners.push(fn);
-  return () => {
-    const i = listeners.indexOf(fn);
-    if (i >= 0) listeners.splice(i, 1);
-  };
-}
+// Persist on every change. Subscribers (e.g. the audio store pushing
+// settings to the worklet) attach via useSettingsStore.subscribe.
+useSettingsStore.subscribe((s) => persist(s));
 
 export function updateSettings(patch: Partial<Settings>) {
-  const next = { ...useSettingsStore.getState(), ...patch };
-  useSettingsStore.setState(next, true);
-  persist(next);
-  for (const fn of listeners) fn(next);
+  useSettingsStore.setState(patch, false);
 }
 
 export function resetSettings() {
