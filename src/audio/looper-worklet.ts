@@ -1,7 +1,7 @@
 /// <reference types="audioworklet" />
 
 const NUM_TRACKS = 4;
-const MAX_LOOP_SECONDS = 120;
+const MAX_LOOP_SECONDS = 600;
 
 type Mode = 'empty' | 'recording' | 'playing' | 'overdub' | 'stopped' | 'armed';
 type RecAction = 'rec-play' | 'rec-overdub';
