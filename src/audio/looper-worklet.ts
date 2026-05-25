@@ -71,11 +71,18 @@ class LooperProcessor extends AudioWorkletProcessor {
 
   meterCounter = 0;
   meterIntervalFrames = 0;
+  // Time-based exponential decay applied to peak meters each block.
+  // Half-life ~150 ms — long enough that transients stay visible, short
+  // enough that meters fall back to the noise floor between hits.
+  peakDecayPerBlock = 1;
 
   constructor() {
     super();
     this.meterIntervalFrames = Math.floor(sampleRate / 30);
     this.clickLength = Math.floor(sampleRate * 0.06);
+    // Assume Web Audio's standard 128-frame render quantum for decay sizing.
+    const blockMs = (128 / sampleRate) * 1000;
+    this.peakDecayPerBlock = Math.pow(0.5, blockMs / 150);
     this.recomputeTempo();
     this.port.onmessage = (e: MessageEvent) => this.onMessage(e.data);
   }
@@ -178,11 +185,15 @@ class LooperProcessor extends AudioWorkletProcessor {
       this.port.postMessage({ type: 'buffer', reqId, track: 'mix', l: new ArrayBuffer(0), r: new ArrayBuffer(0), sampleRate });
       return;
     }
-    // Use the LCM of all track lengths so each track plays in its entirety.
+    // Use the LCM of all track lengths so each track plays in its entirety,
+    // but cap the result at MAX_LOOP_SECONDS to keep coprime cycles
+    // (e.g. x7 + x11 = 77 master loops) from allocating gigabytes.
     let total = this.masterFrames;
     for (const t of this.tracks) {
       if (t.bufL) total = lcm(total, t.bufL.length);
     }
+    const cap = sampleRate * MAX_LOOP_SECONDS;
+    if (total > cap) total = cap;
     const mixL = new Float32Array(total);
     const mixR = new Float32Array(total);
     for (const t of this.tracks) {
@@ -473,9 +484,11 @@ class LooperProcessor extends AudioWorkletProcessor {
     const hasInput = !!inL;
     const monitor = this.monitor;
 
-    let inPeak = this.inputPeak;
-    for (const t of this.tracks) t.peak *= 0.9;
-    inPeak *= 0.9;
+    const decay = this.peakDecayPerBlock;
+    let inPeak = this.inputPeak * decay;
+    for (let ti = 0; ti < NUM_TRACKS; ti++) {
+      this.tracks[ti].peak *= decay;
+    }
 
     // Auto-rec audio trigger
     if (hasInput && this.autoRec) {
