@@ -328,6 +328,19 @@ html, body, #root {
   border-radius: 999px;
 }
 
+.track-cycles {
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 600;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: rgba(108, 140, 255, 0.16);
+  color: var(--selected);
+  border: 1px solid var(--selected);
+  margin-left: auto;
+  margin-right: 8px;
+}
+
 .track-mode.mode-empty { background: var(--panel-2); color: var(--text-mute); }
 .track-mode.mode-armed { background: rgba(247, 201, 72, 0.16); color: var(--accent); animation: armed-pulse 1.2s ease-in-out infinite; }
 .track-mode.mode-rec { background: rgba(255, 71, 87, 0.16); color: var(--rec); }

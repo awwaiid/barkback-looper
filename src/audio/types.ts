@@ -8,6 +8,8 @@ export interface TrackSnapshot {
   gain: number;
   durationFrames: number;
   canUndo: boolean;
+  cycles: number;       // how many master cycles this track spans
+  cycleIndex: number;   // current cycle being played (0..cycles-1)
 }
 
 export interface EngineState {
@@ -22,6 +24,7 @@ export interface MetersData {
   type: 'meters';
   inputPeak: number;
   trackPeaks: number[];
+  trackProgress: number[]; // per-track playback progress 0..1 across its full buffer
   playhead: number;
   loopFrames: number;
   growFrames: number;

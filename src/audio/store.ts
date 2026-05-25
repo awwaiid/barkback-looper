@@ -10,6 +10,8 @@ const emptyTrack = (): TrackSnapshot => ({
   gain: 1.0,
   durationFrames: 0,
   canUndo: false,
+  cycles: 1,
+  cycleIndex: 0,
 });
 
 export interface AudioStoreState {
@@ -26,6 +28,7 @@ export interface AudioStoreState {
   tracks: TrackSnapshot[];
   inputPeak: number;
   trackPeaks: number[];
+  trackProgress: number[];
   trackWaveforms: (Float32Array | null)[];
   selectedTrack: number;
   monitor: number;
@@ -68,6 +71,7 @@ export const useAudioStore = create<AudioStoreState>(() => ({
   tracks: Array.from({ length: NUM_TRACKS }, emptyTrack),
   inputPeak: 0,
   trackPeaks: Array.from({ length: NUM_TRACKS }, () => 0),
+  trackProgress: Array.from({ length: NUM_TRACKS }, () => 0),
   trackWaveforms: Array.from({ length: NUM_TRACKS }, () => null),
   selectedTrack: 0,
   monitor: 0,
@@ -131,6 +135,7 @@ engine.setCallbacks({
     useAudioStore.setState({
       inputPeak: m.inputPeak,
       trackPeaks: [...m.trackPeaks],
+      trackProgress: [...m.trackProgress],
       playhead: m.playhead,
       growFrames: m.growFrames,
       beatInMeasure: m.beatInMeasure,

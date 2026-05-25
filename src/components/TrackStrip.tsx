@@ -6,7 +6,6 @@ import {
   undoTrack,
   setTrackGain,
   setSelectedTrack,
-  selectLoopProgress,
 } from '../audio/store.ts';
 import { exportTrackWav } from '../audio/storage.ts';
 import { useSettingsStore } from '../settings/settings.ts';
@@ -56,7 +55,7 @@ export function TrackStrip({ index }: Props) {
   const peak = useAudioStore(s => s.trackPeaks[index] ?? 0);
   const selected = useAudioStore(s => s.selectedTrack === index);
   const loopFrames = useAudioStore(s => s.loopFrames);
-  const progress = useAudioStore(selectLoopProgress);
+  const progress = useAudioStore(s => s.trackProgress[index] ?? 0);
   const waveform = useAudioStore(s => s.trackWaveforms[index]);
   const recAction = useSettingsStore(s => s.recAction);
 
@@ -109,6 +108,11 @@ export function TrackStrip({ index }: Props) {
     >
       <div className="track-head" onDoubleClick={onModeDoubleClick}>
         <span className="track-num">{index + 1}</span>
+        {track.cycles > 1 && (
+          <span className="track-cycles" title={`${track.cycles}× master loop`}>
+            ×{track.cycles}
+          </span>
+        )}
         <span className={`track-mode ${MODE_CLASS[track.mode]}`}>{MODE_LABEL[track.mode]}</span>
       </div>
 

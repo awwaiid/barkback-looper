@@ -2,6 +2,7 @@
 
 const NUM_TRACKS = 4;
 const MAX_LOOP_SECONDS = 120;
+const MAX_CYCLES = 8; // tracks 2-4 can be up to 8x the master loop
 
 type Mode = 'empty' | 'recording' | 'playing' | 'overdub' | 'stopped' | 'armed';
 type RecAction = 'rec-play' | 'rec-overdub';
@@ -15,7 +16,13 @@ interface Track {
   undoR: Float32Array | null;
   gain: number;
   peak: number;
-  pendingBeats: number; // count-in/quantize countdown; 0 means not pending
+  pendingBeats: number;
+  cycles: number;       // 1 means equal to master, 2 means 2x master, etc.
+  cycleIndex: number;   // 0..cycles-1
+  // Growing-buffer state used during initial recording (before length is locked):
+  growL: Float32Array | null;
+  growR: Float32Array | null;
+  growIdx: number;
 }
 
 const makeTrack = (): Track => ({
@@ -27,17 +34,17 @@ const makeTrack = (): Track => ({
   gain: 1.0,
   peak: 0,
   pendingBeats: 0,
+  cycles: 1,
+  cycleIndex: 0,
+  growL: null,
+  growR: null,
+  growIdx: 0,
 });
 
 class LooperProcessor extends AudioWorkletProcessor {
   tracks: Track[] = Array.from({ length: NUM_TRACKS }, makeTrack);
-  loopFrames = 0;
-  playhead = 0;
-
-  // Track 1 grows into these until loop length is locked.
-  growL: Float32Array | null = null;
-  growR: Float32Array | null = null;
-  growIdx = 0;
+  masterFrames = 0;
+  playhead = 0; // 0..masterFrames-1
 
   monitor = 0;
   inputPeak = 0;
@@ -46,7 +53,6 @@ class LooperProcessor extends AudioWorkletProcessor {
   autoRec = false;
   autoRecThreshold = 0.05;
 
-  // Tempo + metronome
   bpm = 120;
   beatsPerMeasure = 4;
   metronomeOn = false;
@@ -95,7 +101,7 @@ class LooperProcessor extends AudioWorkletProcessor {
         break;
       case 'clearAll':
         for (let i = 0; i < NUM_TRACKS; i++) this.clearTrack(i);
-        this.loopFrames = 0;
+        this.masterFrames = 0;
         this.playhead = 0;
         this.publishState();
         break;
@@ -104,14 +110,16 @@ class LooperProcessor extends AudioWorkletProcessor {
         this.publishState();
         break;
       case 'stopAll':
-        for (const t of this.tracks) {
+        for (let i = 0; i < NUM_TRACKS; i++) {
+          const t = this.tracks[i];
           if (t.mode === 'recording' || t.mode === 'overdub' || t.mode === 'playing') {
             t.mode = 'stopped';
           }
-          if (t.mode === 'armed') this.cancelArm(t, this.tracks.indexOf(t));
+          if (t.mode === 'armed') this.cancelArm(i);
         }
-        this.finalizeGrow();
+        this.finalizeAllRecordings();
         this.playhead = 0;
+        for (const t of this.tracks) t.cycleIndex = 0;
         this.publishState();
         break;
       case 'playAll':
@@ -167,17 +175,22 @@ class LooperProcessor extends AudioWorkletProcessor {
   }
 
   sendMix(reqId: number) {
-    if (this.loopFrames === 0) {
+    if (this.masterFrames === 0) {
       this.port.postMessage({ type: 'buffer', reqId, track: 'mix', l: new ArrayBuffer(0), r: new ArrayBuffer(0), sampleRate });
       return;
     }
-    const mixL = new Float32Array(this.loopFrames);
-    const mixR = new Float32Array(this.loopFrames);
+    // Use the LCM of all track lengths so each track plays in its entirety.
+    let total = this.masterFrames;
+    for (const t of this.tracks) {
+      if (t.bufL) total = lcm(total, t.bufL.length);
+    }
+    const mixL = new Float32Array(total);
+    const mixR = new Float32Array(total);
     for (const t of this.tracks) {
       if (!t.bufL || !t.bufR) continue;
       const len = t.bufL.length;
       const g = t.gain;
-      for (let i = 0; i < this.loopFrames; i++) {
+      for (let i = 0; i < total; i++) {
         const pos = i % len;
         mixL[i] += t.bufL[pos] * g;
         mixR[i] += t.bufR[pos] * g;
@@ -193,8 +206,8 @@ class LooperProcessor extends AudioWorkletProcessor {
     const l = new Float32Array(lBuf);
     const r = new Float32Array(rBuf);
     if (l.length === 0) return;
-    if (this.loopFrames === 0) {
-      this.loopFrames = l.length;
+    if (this.masterFrames === 0) {
+      this.masterFrames = l.length;
       this.playhead = 0;
     }
     const t = this.tracks[idx];
@@ -203,6 +216,10 @@ class LooperProcessor extends AudioWorkletProcessor {
     t.undoL = null;
     t.undoR = null;
     t.mode = 'stopped';
+    // Snap loaded buffer length to a multiple of master.
+    const c = Math.max(1, Math.round(l.length / this.masterFrames));
+    t.cycles = c;
+    t.cycleIndex = 0;
     this.publishState();
   }
 
@@ -215,12 +232,15 @@ class LooperProcessor extends AudioWorkletProcessor {
     t.undoR = null;
     t.peak = 0;
     t.pendingBeats = 0;
-    if (idx === 0 && this.tracks.every(tr => tr.mode === 'empty')) {
-      this.loopFrames = 0;
+    t.cycles = 1;
+    t.cycleIndex = 0;
+    t.growL = null;
+    t.growR = null;
+    t.growIdx = 0;
+    // Reset the master only when ALL tracks are now empty.
+    if (this.tracks.every(tr => tr.mode === 'empty')) {
+      this.masterFrames = 0;
       this.playhead = 0;
-      this.growL = null;
-      this.growR = null;
-      this.growIdx = 0;
     }
   }
 
@@ -243,16 +263,48 @@ class LooperProcessor extends AudioWorkletProcessor {
     }
   }
 
-  finalizeGrow() {
-    if (this.loopFrames === 0 && this.growL && this.growIdx > 0) {
-      const t = this.tracks[0];
-      t.bufL = this.growL.slice(0, this.growIdx);
-      t.bufR = this.growR!.slice(0, this.growIdx);
-      this.loopFrames = this.growIdx;
-      this.growL = null;
-      this.growR = null;
-      this.growIdx = 0;
+  // Finalize the growing buffer of a track that just stopped recording.
+  // Snaps length: track 1 becomes master; tracks 2-4 snap to nearest integer multiple.
+  finalizeGrow(idx: number) {
+    const t = this.tracks[idx];
+    if (!t.growL || t.growIdx === 0) {
+      t.growL = null;
+      t.growR = null;
+      t.growIdx = 0;
+      return;
+    }
+    if (idx === 0 && this.masterFrames === 0) {
+      // Track 1 first record: this defines the master length.
+      t.bufL = t.growL.slice(0, t.growIdx);
+      t.bufR = t.growR!.slice(0, t.growIdx);
+      this.masterFrames = t.growIdx;
+      t.cycles = 1;
+      t.cycleIndex = 0;
       this.playhead = 0;
+    } else {
+      // Snap to nearest integer multiple of masterFrames (min 1, max MAX_CYCLES).
+      const ratio = t.growIdx / this.masterFrames;
+      const cycles = Math.max(1, Math.min(MAX_CYCLES, Math.round(ratio)));
+      const finalLen = cycles * this.masterFrames;
+      const out_l = new Float32Array(finalLen);
+      const out_r = new Float32Array(finalLen);
+      const copyLen = Math.min(finalLen, t.growIdx);
+      out_l.set(t.growL.subarray(0, copyLen));
+      out_r.set(t.growR!.subarray(0, copyLen));
+      t.bufL = out_l;
+      t.bufR = out_r;
+      t.cycles = cycles;
+      t.cycleIndex = Math.min(t.cycleIndex, cycles - 1);
+    }
+    t.growL = null;
+    t.growR = null;
+    t.growIdx = 0;
+  }
+
+  finalizeAllRecordings() {
+    for (let i = 0; i < NUM_TRACKS; i++) {
+      const t = this.tracks[i];
+      if (t.growL && t.growIdx > 0) this.finalizeGrow(i);
     }
   }
 
@@ -263,49 +315,64 @@ class LooperProcessor extends AudioWorkletProcessor {
     }
     if (this.recQuantize === 'beat') return 1;
     if (this.recQuantize === 'measure') {
-      const remaining = this.beatsPerMeasure - this.beatInMeasure;
-      return remaining;
+      return this.beatsPerMeasure - this.beatInMeasure;
     }
     return 0;
   }
 
-  cancelArm(t: Track, idx: number) {
-    if (idx === 0 && this.loopFrames === 0) {
-      this.growL = null;
-      this.growR = null;
-      this.growIdx = 0;
-    } else {
-      t.bufL = null;
-      t.bufR = null;
-    }
+  cancelArm(idx: number) {
+    const t = this.tracks[idx];
+    t.growL = null;
+    t.growR = null;
+    t.growIdx = 0;
+    // Cancelling an armed track always releases the buffer — autoRec arming
+    // only pre-allocates an empty growing buffer, never useful audio.
+    t.bufL = null;
+    t.bufR = null;
     t.mode = 'empty';
     t.pendingBeats = 0;
   }
 
-  // Allocate buffer for a track and switch to recording state.
+  // Allocate a growing buffer and enter recording state.
   enterRecording(idx: number) {
     const t = this.tracks[idx];
-    if (idx === 0 && this.loopFrames === 0) {
-      this.growL = new Float32Array(sampleRate * MAX_LOOP_SECONDS);
-      this.growR = new Float32Array(sampleRate * MAX_LOOP_SECONDS);
-      this.growIdx = 0;
+    if (idx === 0 && this.masterFrames === 0) {
+      // Track 1 first record: open-ended length, capped at MAX_LOOP_SECONDS.
+      t.growL = new Float32Array(sampleRate * MAX_LOOP_SECONDS);
+      t.growR = new Float32Array(sampleRate * MAX_LOOP_SECONDS);
+      t.growIdx = 0;
       this.playhead = 0;
-    } else if (this.loopFrames > 0) {
-      t.bufL = new Float32Array(this.loopFrames);
-      t.bufR = new Float32Array(this.loopFrames);
+    } else if (this.masterFrames > 0) {
+      // Any later record: grow up to MAX_CYCLES * masterFrames so length can snap up.
+      const maxLen = MAX_CYCLES * this.masterFrames;
+      t.growL = new Float32Array(maxLen);
+      t.growR = new Float32Array(maxLen);
+      t.growIdx = 0;
+      // Anchor this track's playback to begin at the current master position.
+      t.cycleIndex = 0;
     } else {
-      // Should not happen: tracks 2-4 can't record without a master loop yet.
+      // No master yet and not track 1 — invalid.
       t.mode = 'empty';
       return;
     }
     t.mode = 'recording';
     t.pendingBeats = 0;
+    // Drop any prior buffer (we'll replace on finalize). Keep undo if present.
+    t.bufL = null;
+    t.bufR = null;
+  }
+
+  // For overdub: existing bufL/R, no grow buffer.
+  enterOverdub(idx: number) {
+    const t = this.tracks[idx];
+    this.snapshot(t);
+    t.mode = 'overdub';
   }
 
   // Apply the post-record transition based on recAction.
   finishRecord(idx: number) {
     const t = this.tracks[idx];
-    if (idx === 0 && this.loopFrames === 0) this.finalizeGrow();
+    this.finalizeGrow(idx);
     if (this.recAction === 'rec-overdub') {
       this.snapshot(t);
       t.mode = 'overdub';
@@ -319,9 +386,9 @@ class LooperProcessor extends AudioWorkletProcessor {
 
     if (action === 'stop') {
       if (t.mode === 'armed') {
-        this.cancelArm(t, idx);
-      } else if (t.mode === 'recording' && idx === 0 && this.loopFrames === 0) {
-        this.finalizeGrow();
+        this.cancelArm(idx);
+      } else if (t.mode === 'recording') {
+        this.finalizeGrow(idx);
         t.mode = 'stopped';
       } else if (t.mode !== 'empty') {
         t.mode = 'stopped';
@@ -333,10 +400,10 @@ class LooperProcessor extends AudioWorkletProcessor {
     if (action === 'play') {
       if (t.mode === 'stopped' || t.mode === 'overdub') t.mode = 'playing';
       else if (t.mode === 'recording') {
-        if (idx === 0 && this.loopFrames === 0) this.finalizeGrow();
+        this.finalizeGrow(idx);
         t.mode = 'playing';
       } else if (t.mode === 'armed') {
-        this.cancelArm(t, idx);
+        this.cancelArm(idx);
       }
       this.publishState();
       return;
@@ -344,30 +411,28 @@ class LooperProcessor extends AudioWorkletProcessor {
 
     // action === 'rec' — main one-button cycle
     if (t.mode === 'empty') {
-      // Reject tracks 2-4 attempting to record before track 1 sets the loop.
-      if (idx !== 0 && this.loopFrames === 0) {
+      if (idx !== 0 && this.masterFrames === 0) {
+        // Tracks 2-4 cannot record before master is set.
         this.publishState();
         return;
       }
       const pending = this.schedulePendingBeats();
       if (pending > 0) {
-        // Quantize or count-in: just arm; buffer allocates when recording actually starts.
         t.mode = 'armed';
         t.pendingBeats = pending;
       } else if (this.autoRec) {
-        // Audio-threshold arm. Allocate buffer now so recording can start the moment audio crosses.
+        // Allocate buffer now so input crossing threshold can start recording immediately.
         this.enterRecording(idx);
         t.mode = 'armed';
       } else {
         this.enterRecording(idx);
       }
     } else if (t.mode === 'armed') {
-      this.cancelArm(t, idx);
+      this.cancelArm(idx);
     } else if (t.mode === 'recording') {
       this.finishRecord(idx);
     } else if (t.mode === 'playing') {
-      this.snapshot(t);
-      t.mode = 'overdub';
+      this.enterOverdub(idx);
     } else if (t.mode === 'overdub') {
       t.mode = 'playing';
     } else if (t.mode === 'stopped') {
@@ -379,15 +444,17 @@ class LooperProcessor extends AudioWorkletProcessor {
   publishState() {
     const tracks = this.tracks.map(t => ({
       mode: t.mode,
-      hasAudio: t.bufL !== null || (this.tracks[0] === t && this.growL !== null && this.growIdx > 0),
+      hasAudio: t.bufL !== null || (t.growL !== null && t.growIdx > 0),
       gain: t.gain,
       durationFrames: t.bufL ? t.bufL.length : 0,
       canUndo: t.undoL !== null,
+      cycles: t.cycles,
+      cycleIndex: t.cycleIndex,
     }));
     this.port.postMessage({
       type: 'state',
       tracks,
-      loopFrames: this.loopFrames,
+      loopFrames: this.masterFrames,
       playhead: this.playhead,
       sampleRate,
     });
@@ -410,10 +477,7 @@ class LooperProcessor extends AudioWorkletProcessor {
     for (const t of this.tracks) t.peak *= 0.9;
     inPeak *= 0.9;
 
-    const haveLoop = this.loopFrames > 0;
-    let ph = this.playhead;
-
-    // Auto-rec trigger: check if any audio-armed track should start now.
+    // Auto-rec audio trigger
     if (hasInput && this.autoRec) {
       let triggered = false;
       for (let i = 0; i < block && !triggered; i++) {
@@ -423,9 +487,9 @@ class LooperProcessor extends AudioWorkletProcessor {
       }
       if (triggered) {
         let changed = false;
-        for (const t of this.tracks) {
-          // Only audio-armed (no pending beats and buffer already allocated).
-          if (t.mode === 'armed' && t.pendingBeats === 0 && (t.bufL !== null || this.growL !== null)) {
+        for (let ti = 0; ti < NUM_TRACKS; ti++) {
+          const t = this.tracks[ti];
+          if (t.mode === 'armed' && t.pendingBeats === 0 && t.growL !== null) {
             t.mode = 'recording';
             changed = true;
           }
@@ -433,6 +497,8 @@ class LooperProcessor extends AudioWorkletProcessor {
         if (changed) this.publishState();
       }
     }
+
+    const haveMaster = this.masterFrames > 0;
 
     let anyActive = false;
     for (const t of this.tracks) {
@@ -442,16 +508,17 @@ class LooperProcessor extends AudioWorkletProcessor {
       }
     }
 
-    // Beat boundary inside this block?
+    // Beat boundary detection
     const framesUntilBeat = this.framesPerBeat - this.beatFrame;
     const beatHitAt = framesUntilBeat < block ? framesUntilBeat : -1;
 
-    // Fixed-length auto-stop for track 1
-    const fixedFrames = (this.fixedLoopMeasures > 0 && this.loopFrames === 0)
+    // Fixed-length auto-stop for track 1 first-record only
+    const fixedFrames = (this.fixedLoopMeasures > 0 && this.masterFrames === 0)
       ? this.fixedLoopMeasures * this.beatsPerMeasure * this.framesPerBeat
       : 0;
 
     let fixedAutoFinishPending = false;
+    let ph = this.playhead;
 
     for (let i = 0; i < block; i++) {
       const sL = hasInput ? inL[i] : 0;
@@ -465,54 +532,71 @@ class LooperProcessor extends AudioWorkletProcessor {
       let mixL = monitor * sL;
       let mixR = monitor * sR;
 
-      // Track 1 growing into its buffer until loop length locks.
-      if (!haveLoop && this.tracks[0].mode === 'recording' && this.growL) {
-        if (this.growIdx < this.growL.length) {
-          this.growL[this.growIdx] = sL;
-          this.growR![this.growIdx] = sR;
-          this.growIdx++;
-          if (fixedFrames > 0 && this.growIdx >= fixedFrames) {
-            fixedAutoFinishPending = true;
+      // Each track: playback + record into either grow-buffer or existing buf.
+      for (let ti = 0; ti < NUM_TRACKS; ti++) {
+        const t = this.tracks[ti];
+
+        // Recording into grow-buffer
+        if (t.mode === 'recording' && t.growL) {
+          if (t.growIdx < t.growL.length) {
+            t.growL[t.growIdx] = sL;
+            t.growR![t.growIdx] = sR;
+            t.growIdx++;
+            if (ti === 0 && fixedFrames > 0 && this.masterFrames === 0 && t.growIdx >= fixedFrames) {
+              fixedAutoFinishPending = true;
+            }
+            // Auto-cap tracks 2-4 at MAX_CYCLES * master
+            if (haveMaster && ti !== 0 && t.growIdx >= MAX_CYCLES * this.masterFrames) {
+              this.finishRecord(ti);
+            }
           }
         }
-      }
 
-      if (haveLoop) {
-        for (let ti = 0; ti < NUM_TRACKS; ti++) {
-          const t = this.tracks[ti];
-          if (!t.bufL || !t.bufR) continue;
+        // Playback / overdub uses the existing bufL/R aligned to master
+        if (haveMaster && t.bufL && t.bufR) {
           const len = t.bufL.length;
-          if (len === 0) continue;
-          const pos = ph % len;
-
-          if (t.mode === 'playing' || t.mode === 'overdub' || t.mode === 'recording') {
-            const playL = t.bufL[pos] * t.gain;
-            const playR = t.bufR[pos] * t.gain;
-            mixL += playL;
-            mixR += playR;
-            const tp = Math.max(Math.abs(playL), Math.abs(playR));
-            if (tp > t.peak) t.peak = tp;
+          if (len > 0) {
+            const trackPos = (t.cycleIndex * this.masterFrames + ph) % len;
+            if (t.mode === 'playing' || t.mode === 'overdub') {
+              const playL = t.bufL[trackPos] * t.gain;
+              const playR = t.bufR[trackPos] * t.gain;
+              mixL += playL;
+              mixR += playR;
+              const tp = Math.max(Math.abs(playL), Math.abs(playR));
+              if (tp > t.peak) t.peak = tp;
+            }
+            if (t.mode === 'overdub') {
+              t.bufL[trackPos] = t.bufL[trackPos] + sL;
+              t.bufR[trackPos] = t.bufR[trackPos] + sR;
+            }
           }
-          if (t.mode === 'recording' || t.mode === 'overdub') {
-            t.bufL[pos] = t.bufL[pos] + sL;
-            t.bufR[pos] = t.bufR[pos] + sR;
-          }
-        }
-        if (anyActive) {
-          ph = (ph + 1) % this.loopFrames;
         }
       }
 
-      // Beat fires at this sample index
+      // Advance master playhead, then handle wrap & cycle increments.
+      if (haveMaster && anyActive) {
+        ph++;
+        if (ph >= this.masterFrames) {
+          ph = 0;
+          // Master wrapped — advance each track's cycle counter
+          for (let ti = 0; ti < NUM_TRACKS; ti++) {
+            const t = this.tracks[ti];
+            if (t.cycles > 1) {
+              t.cycleIndex = (t.cycleIndex + 1) % t.cycles;
+            }
+          }
+        }
+      }
+
+      // Beat fires?
       if (i === beatHitAt) {
         this.beatInMeasure = (this.beatInMeasure + 1) % this.beatsPerMeasure;
-        // Trigger metronome click
         if (this.metronomeOn) {
           this.clickActive = true;
           this.clickPhase = 0;
           this.clickFreq = this.beatInMeasure === 0 ? 880 : 440;
         }
-        // Advance count-in / quantize countdowns
+        // Count-in / quantize tick
         for (let ti = 0; ti < NUM_TRACKS; ti++) {
           const t = this.tracks[ti];
           if (t.mode === 'armed' && t.pendingBeats > 0) {
@@ -524,7 +608,7 @@ class LooperProcessor extends AudioWorkletProcessor {
         }
       }
 
-      // Click synthesis (after potential start above)
+      // Click synth
       if (this.clickActive) {
         const env = Math.exp(-this.clickPhase / (sampleRate * 0.025));
         const v = Math.sin(2 * Math.PI * this.clickFreq * this.clickPhase / sampleRate) * env * this.metronomeLevel;
@@ -540,7 +624,6 @@ class LooperProcessor extends AudioWorkletProcessor {
 
     this.playhead = ph;
     this.inputPeak = inPeak;
-    // Advance beat clock by block length
     this.beatFrame = (this.beatFrame + block) % this.framesPerBeat;
 
     if (fixedAutoFinishPending) {
@@ -552,20 +635,34 @@ class LooperProcessor extends AudioWorkletProcessor {
     if (this.meterCounter >= this.meterIntervalFrames) {
       this.meterCounter = 0;
       let countInMs = 0;
-      for (const t of this.tracks) {
+      const trackProgress: number[] = new Array(NUM_TRACKS);
+      for (let ti = 0; ti < NUM_TRACKS; ti++) {
+        const t = this.tracks[ti];
         if (t.mode === 'armed' && t.pendingBeats > 0) {
           const frames = t.pendingBeats * this.framesPerBeat - this.beatFrame;
           const ms = (frames / sampleRate) * 1000;
           if (ms > countInMs) countInMs = ms;
+        }
+        // Per-track progress 0..1 across its entire buffer.
+        if (t.bufL && this.masterFrames > 0) {
+          const totalLen = t.bufL.length;
+          const trackPos = (t.cycleIndex * this.masterFrames + this.playhead) % totalLen;
+          trackProgress[ti] = trackPos / totalLen;
+        } else if (t.growL && t.growIdx > 0) {
+          // While recording: progress relative to growing length so far.
+          trackProgress[ti] = 0;
+        } else {
+          trackProgress[ti] = 0;
         }
       }
       this.port.postMessage({
         type: 'meters',
         inputPeak: this.inputPeak,
         trackPeaks: this.tracks.map(t => t.peak),
+        trackProgress,
         playhead: this.playhead,
-        loopFrames: this.loopFrames,
-        growFrames: this.growIdx,
+        loopFrames: this.masterFrames,
+        growFrames: this.tracks[0].growIdx,
         beatInMeasure: this.beatInMeasure,
         beatProgress: this.framesPerBeat > 0 ? this.beatFrame / this.framesPerBeat : 0,
         countInRemainingMs: countInMs,
@@ -574,6 +671,14 @@ class LooperProcessor extends AudioWorkletProcessor {
 
     return true;
   }
+}
+
+function gcd(a: number, b: number): number {
+  while (b) { [a, b] = [b, a % b]; }
+  return a;
+}
+function lcm(a: number, b: number): number {
+  return Math.floor(a / gcd(a, b)) * b;
 }
 
 registerProcessor('looper', LooperProcessor);
