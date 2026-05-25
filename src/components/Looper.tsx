@@ -86,7 +86,10 @@ export function Looper() {
   return (
     <div className="looper">
       <header className="app-header">
-        <h1>spindoctor</h1>
+        <h1>
+          <img src="/logo.png" alt="" className="app-logo" />
+          <span>barkback&nbsp;looper</span>
+        </h1>
         <AudioSetup />
         <button className="btn" onClick={() => setShowMidi(s => !s)}>
           {showMidi ? 'Hide MIDI' : 'MIDI'}

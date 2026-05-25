@@ -1,28 +1,25 @@
-## Usage
+# Barkback Looper
+
+<p align="center">
+  <img src="docs/logo.png" alt="Barkback Looper" width="200" />
+</p>
+
+This is a web-based looper inspired by the RC-505 mk2 (which I don't have) and other similar things. I'm building it to use on my touch-screen, so maybe it'll work in a tablet. Also I'll be trying out my midi pedal.
+
+![screenshot](docs/screenshot.png)
+
+## Run it
 
 ```bash
-$ npm install # or pnpm install or yarn install
+npm install
+npm run dev
 ```
 
-### Learn more on the [Solid Website](https://solidjs.com) and come chat with us on our [Discord](https://discord.com/invite/solidjs)
+Then open the printed URL, click **Connect input**, grant mic access, and tap REC on track 1.
 
-## Available Scripts
+## Build
 
-In the project directory, you can run:
-
-### `npm run dev`
-
-Runs the app in the development mode.<br>
-Open [http://localhost:5173](http://localhost:5173) to view it in the browser.
-
-### `npm run build`
-
-Builds the app for production to the `dist` folder.<br>
-It correctly bundles Solid in production mode and optimizes the build for the best performance.
-
-The build is minified and the filenames include the hashes.<br>
-Your app is ready to be deployed!
-
-## Deployment
-
-Learn more about deploying your application with the [documentations](https://vite.dev/guide/static-deploy.html)
+```bash
+npm run build
+npm run preview
+```

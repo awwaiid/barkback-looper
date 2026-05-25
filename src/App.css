@@ -54,6 +54,9 @@ html, body, #root {
 }
 
 .app-header h1 {
+  display: flex;
+  align-items: center;
+  gap: 12px;
   font-family: var(--mono);
   font-weight: 600;
   font-size: 22px;
@@ -63,10 +66,14 @@ html, body, #root {
   text-transform: lowercase;
 }
 
-.app-header h1::before {
-  content: "◉";
-  margin-right: 6px;
-  color: var(--accent-2);
+.app-logo {
+  width: 40px;
+  height: 40px;
+  object-fit: contain;
+  background: #f5edd6;
+  border-radius: 8px;
+  padding: 2px;
+  box-shadow: 0 1px 0 rgba(0,0,0,0.4), 0 2px 6px rgba(0,0,0,0.3);
 }
 
 .audio-setup {

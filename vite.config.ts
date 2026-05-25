@@ -9,9 +9,9 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.svg'],
       manifest: {
-        name: 'spindoctor',
-        short_name: 'spindoctor',
-        description: '4-track web looper',
+        name: 'Barkback Looper',
+        short_name: 'Barkback',
+        description: 'Touch-screen web looper inspired by the Boss RC-505 mk2',
         theme_color: '#0d0e12',
         background_color: '#0d0e12',
         display: 'standalone',
