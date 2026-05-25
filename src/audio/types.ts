@@ -1,0 +1,55 @@
+export type TrackMode = 'empty' | 'recording' | 'playing' | 'overdub' | 'stopped';
+
+export type TrackAction = 'rec' | 'play' | 'stop';
+
+export interface TrackSnapshot {
+  mode: TrackMode;
+  hasAudio: boolean;
+  gain: number;
+  durationFrames: number;
+  canUndo: boolean;
+}
+
+export interface EngineState {
+  type: 'state';
+  tracks: TrackSnapshot[];
+  loopFrames: number;
+  playhead: number;
+  sampleRate: number;
+}
+
+export interface MetersData {
+  type: 'meters';
+  inputPeak: number;
+  trackPeaks: number[];
+  playhead: number;
+  loopFrames: number;
+  growFrames: number;
+}
+
+export type EngineMessage = EngineState | MetersData;
+
+export type WorkletCommand =
+  | { type: 'cmd'; track: number; action: TrackAction }
+  | { type: 'setGain'; track: number; value: number }
+  | { type: 'clear'; track: number }
+  | { type: 'clearAll' }
+  | { type: 'undo'; track: number }
+  | { type: 'stopAll' }
+  | { type: 'playAll' }
+  | { type: 'setMonitor'; value: number }
+  | { type: 'getBuffer'; track: number; reqId: number }
+  | { type: 'getMix'; reqId: number }
+  | { type: 'loadBuffer'; track: number; l: ArrayBuffer; r: ArrayBuffer };
+
+export interface BufferReply {
+  type: 'buffer';
+  reqId: number;
+  track: number | 'mix';
+  l: ArrayBuffer;
+  r: ArrayBuffer;
+  sampleRate: number;
+}
+
+export const NUM_TRACKS = 4;
+export const MAX_LOOP_SECONDS = 120;
