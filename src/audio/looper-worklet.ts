@@ -20,6 +20,11 @@ interface Track {
   pendingBeats: number;
   cycles: number;       // 1 means equal to master, 2 means 2x master, etc.
   cycleIndex: number;   // 0..cycles-1
+  // Master playhead position at REC tap (minus latency compensation), so
+  // playback can align the recorded audio with what the user was hearing
+  // when they tapped REC. Always 0 for track 1's first record and for any
+  // track recorded before the master is established.
+  anchor: number;
   // Growing-buffer state used during initial recording (before length is locked):
   growL: Float32Array | null;
   growR: Float32Array | null;
@@ -37,6 +42,7 @@ const makeTrack = (): Track => ({
   pendingBeats: 0,
   cycles: 1,
   cycleIndex: 0,
+  anchor: 0,
   growL: null,
   growR: null,
   growIdx: 0,
@@ -67,16 +73,10 @@ class LooperProcessor extends AudioWorkletProcessor {
   beatInMeasure = 0;
 
   // Round-trip latency compensation: shift recordings backwards in time by
-  // this many frames so a note played in response to playback ends up
-  // aligned in the buffer with the playback that prompted it.
+  // this many frames. Applied via the track anchor (for first records of
+  // tracks 2-4, so playback aligns with what the user was hearing) and via
+  // the overdub write offset (so overlaid notes land where their cue was).
   latencyCompFrames = 0;
-
-  // 1-second ring buffer of recent input. Used to look up samples from
-  // up to 1 s in the past so we can write "compensated" audio to recordings.
-  preRollL: Float32Array = new Float32Array(0);
-  preRollR: Float32Array = new Float32Array(0);
-  preRollSize = 0;
-  preRollPos = 0;
 
   // Acoustic loopback latency test state
   testPhase: 'idle' | 'running' = 'idle';
@@ -109,9 +109,6 @@ class LooperProcessor extends AudioWorkletProcessor {
     this.clickLength = Math.floor(sampleRate * 0.06);
     const blockMs = (128 / sampleRate) * 1000;
     this.peakDecayPerBlock = Math.pow(0.5, blockMs / 150);
-    this.preRollSize = sampleRate; // 1 second
-    this.preRollL = new Float32Array(this.preRollSize);
-    this.preRollR = new Float32Array(this.preRollSize);
     this.recomputeTempo();
     this.port.onmessage = (e: MessageEvent) => this.onMessage(e.data);
   }
@@ -230,7 +227,9 @@ class LooperProcessor extends AudioWorkletProcessor {
         break;
       case 'setLatencyCompensation': {
         const frames = Math.floor((msg.ms / 1000) * sampleRate);
-        this.latencyCompFrames = Math.max(0, Math.min(this.preRollSize - 1, frames));
+        // Cap compensation at 1 s; anything larger doesn't represent a sane
+        // audio interface round-trip and would just confuse the alignment.
+        this.latencyCompFrames = Math.max(0, Math.min(sampleRate, frames));
         break;
       }
       case 'startLatencyTest':
@@ -333,6 +332,7 @@ class LooperProcessor extends AudioWorkletProcessor {
     t.pendingBeats = 0;
     t.cycles = 1;
     t.cycleIndex = 0;
+    t.anchor = 0;
     // Keep growL/growR allocated for reuse — they're managed as a pool.
     t.growIdx = 0;
     // Reset the master only when ALL tracks are now empty.
@@ -454,9 +454,15 @@ class LooperProcessor extends AudioWorkletProcessor {
     t.growIdx = 0;
     if (idx === 0 && this.masterFrames === 0) {
       this.playhead = 0;
+      t.anchor = 0;
     } else {
-      // Anchor track 2-4 playback to start at the current master position.
+      // Anchor track 2-4 playback to the current master position less the
+      // round-trip latency. On playback, buffer[0] will play at this anchor,
+      // which corresponds to the moment in the master loop the user was
+      // hearing when they tapped REC — so the recording aligns with what
+      // they played along with.
       t.cycleIndex = 0;
+      t.anchor = ((this.playhead - this.latencyCompFrames) % this.masterFrames + this.masterFrames) % this.masterFrames;
     }
     t.mode = 'recording';
     t.pendingBeats = 0;
@@ -680,9 +686,6 @@ class LooperProcessor extends AudioWorkletProcessor {
     let ph = this.playhead;
 
     const compFrames = this.latencyCompFrames;
-    const preRollSize = this.preRollSize;
-    const preRollL = this.preRollL;
-    const preRollR = this.preRollR;
 
     for (let i = 0; i < block; i++) {
       const sL = hasInput ? inL[i] : 0;
@@ -696,16 +699,6 @@ class LooperProcessor extends AudioWorkletProcessor {
       let mixL = monitor * sL;
       let mixR = monitor * sR;
 
-      // Write live input into pre-roll, then read compFrames in the past
-      // for what to actually commit to any recording. Monitor uses the
-      // live sample so the user doesn't hear themselves delayed.
-      preRollL[this.preRollPos] = sL;
-      preRollR[this.preRollPos] = sR;
-      const compIdx = (this.preRollPos - compFrames + preRollSize) % preRollSize;
-      const recL = compFrames > 0 ? preRollL[compIdx] : sL;
-      const recR = compFrames > 0 ? preRollR[compIdx] : sR;
-      this.preRollPos = (this.preRollPos + 1) % preRollSize;
-
       // Each track: playback + record into either grow-buffer or existing buf.
       for (let ti = 0; ti < NUM_TRACKS; ti++) {
         const t = this.tracks[ti];
@@ -713,8 +706,8 @@ class LooperProcessor extends AudioWorkletProcessor {
         // Recording into grow-buffer
         if (t.mode === 'recording' && t.growL) {
           if (t.growIdx < t.growL.length) {
-            t.growL[t.growIdx] = recL;
-            t.growR![t.growIdx] = recR;
+            t.growL[t.growIdx] = sL;
+            t.growR![t.growIdx] = sR;
             t.growIdx++;
             if (ti === 0 && fixedFrames > 0 && this.masterFrames === 0 && t.growIdx >= fixedFrames) {
               fixedAutoFinishPending = true;
@@ -722,11 +715,23 @@ class LooperProcessor extends AudioWorkletProcessor {
           }
         }
 
-        // Playback / overdub uses the existing bufL/R aligned to master
+        // Playback / overdub uses the existing bufL/R aligned to master.
+        // The anchor rotates the buffer so buffer[0] plays at the master
+        // position the user was hearing when they tapped REC.
         if (haveMaster && t.bufL && t.bufR) {
           const len = t.bufL.length;
           if (len > 0) {
-            const trackPos = (t.cycleIndex * this.masterFrames + ph) % len;
+            const M = this.masterFrames;
+            const a = t.anchor;
+            const virtualPos = a === 0 ? ph : (ph - a + M) % M;
+            // cycleIndex increments at master pos 0, but for anchored tracks
+            // the effective "track cycle" turns over at master pos = anchor.
+            // When ph is still below anchor, we're one effective cycle behind.
+            const cyc = t.cycles;
+            const effCycle = (a !== 0 && ph < a)
+              ? ((t.cycleIndex - 1) % cyc + cyc) % cyc
+              : t.cycleIndex;
+            const trackPos = (effCycle * M + virtualPos) % len;
             if (t.mode === 'playing' || t.mode === 'overdub') {
               const playL = t.bufL[trackPos] * t.gain;
               const playR = t.bufR[trackPos] * t.gain;
@@ -736,8 +741,14 @@ class LooperProcessor extends AudioWorkletProcessor {
               if (tp > t.peak) t.peak = tp;
             }
             if (t.mode === 'overdub') {
-              t.bufL[trackPos] = t.bufL[trackPos] + recL;
-              t.bufR[trackPos] = t.bufR[trackPos] + recR;
+              // Shift the write back by compFrames so the user's input
+              // lands at the same buffer position as the playback they
+              // were reacting to was emitted from.
+              const odPos = compFrames > 0
+                ? (trackPos - compFrames + len) % len
+                : trackPos;
+              t.bufL[odPos] = t.bufL[odPos] + sL;
+              t.bufR[odPos] = t.bufR[odPos] + sR;
             }
           }
         }
@@ -813,10 +824,18 @@ class LooperProcessor extends AudioWorkletProcessor {
           const ms = (frames / sampleRate) * 1000;
           if (ms > countInMs) countInMs = ms;
         }
-        // Per-track progress 0..1 across its entire buffer.
+        // Per-track progress 0..1 across its entire buffer (anchor-aware).
         if (t.bufL && this.masterFrames > 0) {
           const totalLen = t.bufL.length;
-          const trackPos = (t.cycleIndex * this.masterFrames + this.playhead) % totalLen;
+          const M = this.masterFrames;
+          const a = t.anchor;
+          const ph2 = this.playhead;
+          const virtualPos = a === 0 ? ph2 : (ph2 - a + M) % M;
+          const cyc = t.cycles;
+          const effCycle = (a !== 0 && ph2 < a)
+            ? ((t.cycleIndex - 1) % cyc + cyc) % cyc
+            : t.cycleIndex;
+          const trackPos = (effCycle * M + virtualPos) % totalLen;
           trackProgress[ti] = trackPos / totalLen;
         } else if (t.growL && t.growIdx > 0) {
           // While recording: progress relative to growing length so far.
