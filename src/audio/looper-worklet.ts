@@ -3,7 +3,8 @@
 const NUM_TRACKS = 4;
 const MAX_LOOP_SECONDS = 120;
 
-type Mode = 'empty' | 'recording' | 'playing' | 'overdub' | 'stopped';
+type Mode = 'empty' | 'recording' | 'playing' | 'overdub' | 'stopped' | 'armed';
+type RecAction = 'rec-play' | 'rec-overdub';
 
 interface Track {
   mode: Mode;
@@ -37,6 +38,10 @@ class LooperProcessor extends AudioWorkletProcessor {
 
   monitor = 0; // 0..1 input passthrough gain
   inputPeak = 0;
+
+  recAction: RecAction = 'rec-play';
+  autoRec = false;
+  autoRecThreshold = 0.05;
 
   meterCounter = 0;
   meterIntervalFrames = 0;
@@ -97,6 +102,13 @@ class LooperProcessor extends AudioWorkletProcessor {
         break;
       case 'loadBuffer':
         this.loadBuffer(msg.track, msg.l, msg.r);
+        break;
+      case 'setRecAction':
+        this.recAction = msg.value;
+        break;
+      case 'setAutoRec':
+        this.autoRec = msg.enabled;
+        this.autoRecThreshold = msg.threshold;
         break;
     }
   }
@@ -208,7 +220,18 @@ class LooperProcessor extends AudioWorkletProcessor {
     const t = this.tracks[idx];
 
     if (action === 'stop') {
-      if (t.mode === 'recording' && idx === 0 && this.loopFrames === 0) {
+      if (t.mode === 'armed') {
+        // Cancel arming entirely.
+        if (idx === 0 && this.loopFrames === 0) {
+          this.growL = null;
+          this.growR = null;
+          this.growIdx = 0;
+        } else {
+          t.bufL = null;
+          t.bufR = null;
+        }
+        t.mode = 'empty';
+      } else if (t.mode === 'recording' && idx === 0 && this.loopFrames === 0) {
         this.finalizeGrow();
         t.mode = 'stopped';
       } else if (t.mode !== 'empty') {
@@ -236,18 +259,32 @@ class LooperProcessor extends AudioWorkletProcessor {
         this.growR = new Float32Array(sampleRate * MAX_LOOP_SECONDS);
         this.growIdx = 0;
         this.playhead = 0;
-        t.mode = 'recording';
+        t.mode = this.autoRec ? 'armed' : 'recording';
       } else if (this.loopFrames > 0) {
         t.bufL = new Float32Array(this.loopFrames);
         t.bufR = new Float32Array(this.loopFrames);
-        t.mode = 'recording';
+        t.mode = this.autoRec ? 'armed' : 'recording';
       }
       // else: tracks 2-4 can't record before track 1 sets the loop
+    } else if (t.mode === 'armed') {
+      // Cancel arming
+      if (idx === 0 && this.loopFrames === 0) {
+        this.growL = null;
+        this.growR = null;
+        this.growIdx = 0;
+      } else {
+        t.bufL = null;
+        t.bufR = null;
+      }
+      t.mode = 'empty';
     } else if (t.mode === 'recording') {
-      // First tap after starting record exits recording into playback.
-      // The loop is now established; a second tap will enter overdub.
       if (idx === 0 && this.loopFrames === 0) this.finalizeGrow();
-      t.mode = 'playing';
+      if (this.recAction === 'rec-overdub') {
+        this.snapshot(t);
+        t.mode = 'overdub';
+      } else {
+        t.mode = 'playing';
+      }
     } else if (t.mode === 'playing') {
       this.snapshot(t);
       t.mode = 'overdub';
@@ -299,6 +336,26 @@ class LooperProcessor extends AudioWorkletProcessor {
 
     const haveLoop = this.loopFrames > 0;
     let ph = this.playhead;
+
+    // Auto-rec trigger check: if any track is armed and input exceeds threshold this block, fire.
+    if (hasInput && this.autoRec) {
+      let triggered = false;
+      for (let i = 0; i < block && !triggered; i++) {
+        if (Math.abs(inL[i]) >= this.autoRecThreshold || Math.abs(inR[i]) >= this.autoRecThreshold) {
+          triggered = true;
+        }
+      }
+      if (triggered) {
+        let changed = false;
+        for (const t of this.tracks) {
+          if (t.mode === 'armed') {
+            t.mode = 'recording';
+            changed = true;
+          }
+        }
+        if (changed) this.publishState();
+      }
+    }
 
     let anyActive = false;
     for (const t of this.tracks) {

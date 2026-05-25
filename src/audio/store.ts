@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import type { EngineState, MetersData, TrackSnapshot } from './types.ts';
 import { NUM_TRACKS } from './types.ts';
 import { LooperEngine } from './engine.ts';
+import { currentSettings, onSettingsChange } from '../settings/settings.ts';
 
 const emptyTrack = (): TrackSnapshot => ({
   mode: 'empty',
@@ -137,11 +138,21 @@ export async function startEngine(deviceId?: string) {
   try {
     const monitor = useAudioStore.getState().monitor;
     await engine.start({ deviceId, monitor });
+    // Push current settings to the freshly-created worklet.
+    const s = currentSettings();
+    engine.setRecAction(s.recAction);
+    engine.setAutoRec(s.autoRec, s.autoRecThreshold);
     useAudioStore.setState({ ready: true, contextRunning: true, statusMsg: '' });
   } catch (err: any) {
     useAudioStore.setState({ statusMsg: `Mic error: ${err?.message ?? err}` });
   }
 }
+
+onSettingsChange((s) => {
+  if (!engine.ready) return;
+  engine.setRecAction(s.recAction);
+  engine.setAutoRec(s.autoRec, s.autoRecThreshold);
+});
 
 export async function stopEngine() {
   await engine.stop();
@@ -163,13 +174,42 @@ export function getSelectedTrack(): number {
 
 export function trackAction(i: number, action: 'rec' | 'play' | 'stop') {
   engine.cmd(i, action);
+  // SINGLE mode: when activating a track, stop all other active tracks.
+  if (action !== 'stop' && currentSettings().trackPlayMode === 'single') {
+    const tracks = useAudioStore.getState().tracks;
+    for (let j = 0; j < tracks.length; j++) {
+      if (j === i) continue;
+      const m = tracks[j].mode;
+      if (m === 'playing' || m === 'overdub' || m === 'recording' || m === 'armed') {
+        engine.cmd(j, 'stop');
+      }
+    }
+  }
 }
 
 export function clearTrack(i: number) { engine.clear(i); }
 export function clearAll() { engine.clearAll(); }
 export function undoTrack(i: number) { engine.undo(i); }
-export function stopAll() { engine.stopAll(); }
-export function playAll() { engine.playAll(); }
+export function stopAll() {
+  const targets = currentSettings().allStopTargets;
+  if (targets.every(Boolean)) {
+    engine.stopAll();
+  } else {
+    for (let i = 0; i < NUM_TRACKS; i++) {
+      if (targets[i]) engine.cmd(i, 'stop');
+    }
+  }
+}
+export function playAll() {
+  const targets = currentSettings().allPlayTargets;
+  if (targets.every(Boolean)) {
+    engine.playAll();
+  } else {
+    for (let i = 0; i < NUM_TRACKS; i++) {
+      if (targets[i]) engine.cmd(i, 'play');
+    }
+  }
+}
 export function setTrackGain(i: number, v: number) {
   engine.setGain(i, v);
   useAudioStore.setState(s => {

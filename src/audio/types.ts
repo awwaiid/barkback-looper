@@ -1,4 +1,4 @@
-export type TrackMode = 'empty' | 'recording' | 'playing' | 'overdub' | 'stopped';
+export type TrackMode = 'empty' | 'recording' | 'playing' | 'overdub' | 'stopped' | 'armed';
 
 export type TrackAction = 'rec' | 'play' | 'stop';
 
@@ -40,7 +40,9 @@ export type WorkletCommand =
   | { type: 'setMonitor'; value: number }
   | { type: 'getBuffer'; track: number; reqId: number }
   | { type: 'getMix'; reqId: number }
-  | { type: 'loadBuffer'; track: number; l: ArrayBuffer; r: ArrayBuffer };
+  | { type: 'loadBuffer'; track: number; l: ArrayBuffer; r: ArrayBuffer }
+  | { type: 'setRecAction'; value: 'rec-play' | 'rec-overdub' }
+  | { type: 'setAutoRec'; enabled: boolean; threshold: number };
 
 export interface BufferReply {
   type: 'buffer';

@@ -126,4 +126,12 @@ export class LooperEngine {
   loadBuffer(track: number, l: ArrayBuffer, r: ArrayBuffer) {
     this.send({ type: 'loadBuffer', track, l, r });
   }
+
+  setRecAction(value: 'rec-play' | 'rec-overdub') {
+    this.send({ type: 'setRecAction', value });
+  }
+
+  setAutoRec(enabled: boolean, threshold: number) {
+    this.send({ type: 'setAutoRec', enabled, threshold });
+  }
 }

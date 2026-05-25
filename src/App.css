@@ -322,7 +322,15 @@ html, body, #root {
 }
 
 .track-mode.mode-empty { background: var(--panel-2); color: var(--text-mute); }
+.track-mode.mode-armed { background: rgba(247, 201, 72, 0.16); color: var(--accent); animation: armed-pulse 1.2s ease-in-out infinite; }
 .track-mode.mode-rec { background: rgba(255, 71, 87, 0.16); color: var(--rec); }
+
+@keyframes armed-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
+}
+
+.track-strip.mode-armed { border-left: 3px solid var(--accent); }
 .track-mode.mode-overdub { background: rgba(255, 159, 67, 0.16); color: var(--overdub); }
 .track-mode.mode-play { background: rgba(45, 212, 126, 0.12); color: var(--play); }
 .track-mode.mode-stop { background: rgba(107, 115, 144, 0.18); color: var(--text-dim); }
@@ -466,6 +474,49 @@ html, body, #root {
   outline: none;
   border-color: var(--selected);
 }
+
+/* Settings panel */
+.setting-help { margin: 4px 0 10px 0; }
+
+.setting-choice {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.setting-choice label {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  cursor: pointer;
+  font-family: var(--mono);
+  font-size: 12px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  transition: background 0.1s;
+}
+.setting-choice label:hover { background: var(--panel-2); }
+.setting-choice code {
+  background: var(--panel-2);
+  padding: 2px 6px;
+  border-radius: 4px;
+  color: var(--accent);
+}
+
+.setting-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 8px;
+  font-family: var(--mono);
+  font-size: 12px;
+  cursor: pointer;
+}
+.setting-row input[type=range] { flex: 1; max-width: 240px; }
+.setting-row.disabled-row { opacity: 0.5; cursor: default; }
+
+.target-table th, .target-table td { text-align: center; }
+.target-table td:first-child, .target-table th:first-child { text-align: left; }
+.target-table td:last-child { display: table-cell; }
 
 /* range/slider tuning */
 input[type=range] {

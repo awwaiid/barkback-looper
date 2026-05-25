@@ -4,6 +4,7 @@ import { TransportBar } from './TransportBar.tsx';
 import { AudioSetup } from './AudioSetup.tsx';
 import { MidiPanel } from './MidiPanel.tsx';
 import { SessionPanel } from './SessionPanel.tsx';
+import { SettingsPanel } from './SettingsPanel.tsx';
 import {
   useAudioStore,
   trackAction,
@@ -20,6 +21,7 @@ import { initMidi, setActionHandlers, type MidiActionHandlers } from '../midi/mi
 export function Looper() {
   const [showMidi, setShowMidi] = useState(false);
   const [showSessions, setShowSessions] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
   const ready = useAudioStore(s => s.ready);
   const loopFrames = useAudioStore(s => s.loopFrames);
   const track1Mode = useAudioStore(s => s.tracks[0]?.mode);
@@ -91,8 +93,12 @@ export function Looper() {
         <button className="btn" onClick={() => setShowSessions(s => !s)}>
           {showSessions ? 'Hide Sessions' : 'Sessions'}
         </button>
+        <button className="btn" onClick={() => setShowSettings(s => !s)}>
+          {showSettings ? 'Hide Settings' : 'Settings'}
+        </button>
       </header>
 
+      {showSettings && <SettingsPanel onClose={() => setShowSettings(false)} />}
       {showMidi && <MidiPanel />}
       {showSessions && <SessionPanel onClose={() => setShowSessions(false)} />}
 

@@ -9,6 +9,7 @@ import {
   selectLoopProgress,
 } from '../audio/store.ts';
 import { exportTrackWav } from '../audio/storage.ts';
+import { useSettingsStore } from '../settings/settings.ts';
 
 interface Props {
   index: number;
@@ -16,6 +17,7 @@ interface Props {
 
 const MODE_LABEL: Record<string, string> = {
   empty: 'empty',
+  armed: 'ARMED',
   recording: 'REC',
   playing: 'PLAY',
   overdub: 'OVERDUB',
@@ -24,16 +26,18 @@ const MODE_LABEL: Record<string, string> = {
 
 const MODE_CLASS: Record<string, string> = {
   empty: 'mode-empty',
+  armed: 'mode-armed',
   recording: 'mode-rec',
   playing: 'mode-play',
   overdub: 'mode-overdub',
   stopped: 'mode-stop',
 };
 
-const recordLabel = (mode: string): string => {
+const recordLabel = (mode: string, recAction: 'rec-play' | 'rec-overdub'): string => {
   switch (mode) {
     case 'empty': return 'REC';
-    case 'recording': return 'PLAY';
+    case 'armed': return 'cancel';
+    case 'recording': return recAction === 'rec-overdub' ? 'OVERDUB' : 'PLAY';
     case 'playing': return 'OVERDUB';
     case 'overdub': return 'PLAY';
     case 'stopped': return 'PLAY';
@@ -54,6 +58,7 @@ export function TrackStrip({ index }: Props) {
   const loopFrames = useAudioStore(s => s.loopFrames);
   const progress = useAudioStore(selectLoopProgress);
   const waveform = useAudioStore(s => s.trackWaveforms[index]);
+  const recAction = useSettingsStore(s => s.recAction);
 
   const lastTapRef = useRef(0);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -142,7 +147,7 @@ export function TrackStrip({ index }: Props) {
           className="btn btn-rec"
           onClick={(e) => { e.stopPropagation(); trackAction(index, 'rec'); }}
         >
-          {recordLabel(track.mode)}
+          {recordLabel(track.mode, recAction)}
         </button>
         <button
           className="btn btn-stop"

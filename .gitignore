@@ -23,3 +23,8 @@ dist-ssr
 *.sln
 *.sw?
 .playwright-mcp/
+
+# Manual-test screenshots saved at the project root.
+/spindoctor-*.png
+/test-*.png
+/settings-open.png
