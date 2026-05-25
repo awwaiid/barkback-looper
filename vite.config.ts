@@ -2,7 +2,13 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 
+// When deployed to GitHub Pages the app lives at /barkback-looper/.
+// Dev still serves at /. Override via PUBLIC_BASE env if hosting elsewhere.
+const base = process.env.PUBLIC_BASE
+  ?? (process.env.GITHUB_ACTIONS ? '/barkback-looper/' : '/');
+
 export default defineConfig({
+  base,
   plugins: [
     react(),
     VitePWA({

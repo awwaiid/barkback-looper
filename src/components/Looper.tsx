@@ -87,7 +87,7 @@ export function Looper() {
     <div className="looper">
       <header className="app-header">
         <h1>
-          <img src="/logo.png" alt="" className="app-logo" />
+          <img src={`${import.meta.env.BASE_URL}logo.png`} alt="" className="app-logo" />
           <span>barkback&nbsp;looper</span>
         </h1>
         <AudioSetup />
