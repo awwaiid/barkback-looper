@@ -9,6 +9,7 @@ import {
 } from '../audio/store.ts';
 import { exportTrackWav } from '../audio/storage.ts';
 import { useSettingsStore } from '../settings/settings.ts';
+import { peakToPct } from '../audio/meter.ts';
 
 interface Props {
   index: number;
@@ -44,12 +45,6 @@ const recordLabel = (mode: string, recAction: 'rec-play' | 'rec-overdub'): strin
   }
 };
 
-const peakToPct = (peak: number): number => {
-  if (peak < 0.0001) return 0;
-  const db = Math.max(-60, 20 * Math.log10(peak));
-  return Math.max(0, Math.min(100, (db + 60) / 60 * 100));
-};
-
 export function TrackStrip({ index }: Props) {
   const track = useAudioStore(s => s.tracks[index]);
   const peak = useAudioStore(s => s.trackPeaks[index] ?? 0);
@@ -59,7 +54,6 @@ export function TrackStrip({ index }: Props) {
   const waveform = useAudioStore(s => s.trackWaveforms[index]);
   const recAction = useSettingsStore(s => s.recAction);
 
-  const lastTapRef = useRef(0);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const showProgress = track.hasAudio && !(track.mode === 'recording' && loopFrames === 0);
 
@@ -93,12 +87,9 @@ export function TrackStrip({ index }: Props) {
 
   const onSelectClick = () => setSelectedTrack(index);
 
-  const onModeDoubleClick = () => {
-    const now = performance.now();
-    if (now - lastTapRef.current < 400 && track.hasAudio) {
-      if (confirm(`Clear track ${index + 1}?`)) clearTrack(index);
-    }
-    lastTapRef.current = now;
+  // Double-tap the strip header to clear.
+  const onHeaderDoubleClick = () => {
+    if (track.hasAudio && confirm(`Clear track ${index + 1}?`)) clearTrack(index);
   };
 
   return (
@@ -106,7 +97,7 @@ export function TrackStrip({ index }: Props) {
       className={`track-strip ${selected ? 'selected' : ''} ${MODE_CLASS[track.mode] ?? ''}`}
       onClick={onSelectClick}
     >
-      <div className="track-head" onDoubleClick={onModeDoubleClick}>
+      <div className="track-head" onDoubleClick={onHeaderDoubleClick}>
         <span className="track-num">{index + 1}</span>
         {track.cycles > 1 && (
           <span className="track-cycles" title={`${track.cycles}× master loop`}>

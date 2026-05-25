@@ -6,12 +6,7 @@ import {
   playAll,
   clearAll,
 } from '../audio/store.ts';
-
-const peakToPct = (peak: number): number => {
-  if (peak < 0.0001) return 0;
-  const db = Math.max(-60, 20 * Math.log10(peak));
-  return Math.max(0, Math.min(100, (db + 60) / 60 * 100));
-};
+import { peakToPct } from '../audio/meter.ts';
 
 export function TransportBar() {
   const inputPeak = useAudioStore(s => s.inputPeak);

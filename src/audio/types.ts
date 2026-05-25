@@ -70,4 +70,3 @@ export interface BufferReply {
 }
 
 export const NUM_TRACKS = 4;
-export const MAX_LOOP_SECONDS = 120;
