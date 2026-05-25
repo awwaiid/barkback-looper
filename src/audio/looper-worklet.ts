@@ -1,7 +1,9 @@
 /// <reference types="audioworklet" />
 
+import { MAX_RECORDING_SECONDS } from './constants.ts';
+
 const NUM_TRACKS = 4;
-const MAX_LOOP_SECONDS = 600;
+const MAX_LOOP_SECONDS = MAX_RECORDING_SECONDS;
 
 type Mode = 'empty' | 'recording' | 'playing' | 'overdub' | 'stopped' | 'armed';
 type RecAction = 'rec-play' | 'rec-overdub';
@@ -163,6 +165,22 @@ class LooperProcessor extends AudioWorkletProcessor {
         this.fixedLoopMeasures = Math.max(0, msg.fixedLoopMeasures);
         this.recomputeTempo();
         break;
+      case 'provideRecBuffers':
+        // Main thread pre-allocates per-track recording buffers and
+        // transfers them in so we never have to allocate on the audio
+        // thread when REC is pressed.
+        for (const b of msg.buffers) {
+          const t = this.tracks[b.track];
+          if (!t) continue;
+          // Only adopt while the track is empty — never blow away an
+          // active recording or finalized take.
+          if (t.mode === 'empty' && !t.bufL) {
+            t.growL = new Float32Array(b.l);
+            t.growR = new Float32Array(b.r);
+            t.growIdx = 0;
+          }
+        }
+        break;
     }
   }
 
@@ -244,8 +262,7 @@ class LooperProcessor extends AudioWorkletProcessor {
     t.pendingBeats = 0;
     t.cycles = 1;
     t.cycleIndex = 0;
-    t.growL = null;
-    t.growR = null;
+    // Keep growL/growR allocated for reuse — they're managed as a pool.
     t.growIdx = 0;
     // Reset the master only when ALL tracks are now empty.
     if (this.tracks.every(tr => tr.mode === 'empty')) {
@@ -332,43 +349,42 @@ class LooperProcessor extends AudioWorkletProcessor {
 
   cancelArm(idx: number) {
     const t = this.tracks[idx];
-    t.growL = null;
-    t.growR = null;
+    // Keep growL/growR allocated; just rewind. bufL/R remain null
+    // (autoRec arming doesn't capture any useful audio to preserve).
     t.growIdx = 0;
-    // Cancelling an armed track always releases the buffer — autoRec arming
-    // only pre-allocates an empty growing buffer, never useful audio.
     t.bufL = null;
     t.bufR = null;
     t.mode = 'empty';
     t.pendingBeats = 0;
   }
 
-  // Allocate a growing buffer and enter recording state.
+  // Enter recording state. Reuses the pre-allocated grow buffer if the
+  // main thread has transferred one in (the common path — no audio-thread
+  // allocation). Falls back to allocating on the audio thread if the
+  // pool hasn't arrived yet or got dropped.
   enterRecording(idx: number) {
     const t = this.tracks[idx];
-    if (idx === 0 && this.masterFrames === 0) {
-      // Track 1 first record: open-ended length, capped at MAX_LOOP_SECONDS.
-      t.growL = new Float32Array(sampleRate * MAX_LOOP_SECONDS);
-      t.growR = new Float32Array(sampleRate * MAX_LOOP_SECONDS);
-      t.growIdx = 0;
-      this.playhead = 0;
-    } else if (this.masterFrames > 0) {
-      // Any later record: same absolute time cap as track 1.
-      // Length will snap to nearest integer multiple of master on stop.
-      const maxLen = sampleRate * MAX_LOOP_SECONDS;
-      t.growL = new Float32Array(maxLen);
-      t.growR = new Float32Array(maxLen);
-      t.growIdx = 0;
-      // Anchor this track's playback to begin at the current master position.
-      t.cycleIndex = 0;
-    } else {
-      // No master yet and not track 1 — invalid.
+    if (idx !== 0 && this.masterFrames === 0) {
+      // Tracks 2-4 cannot record without a master.
       t.mode = 'empty';
       return;
     }
+    if (!t.growL || !t.growR) {
+      const maxLen = sampleRate * MAX_LOOP_SECONDS;
+      t.growL = new Float32Array(maxLen);
+      t.growR = new Float32Array(maxLen);
+    }
+    t.growIdx = 0;
+    if (idx === 0 && this.masterFrames === 0) {
+      this.playhead = 0;
+    } else {
+      // Anchor track 2-4 playback to start at the current master position.
+      t.cycleIndex = 0;
+    }
     t.mode = 'recording';
     t.pendingBeats = 0;
-    // Drop any prior buffer (we'll replace on finalize). Keep undo if present.
+    // Drop any prior finalized buffer (we'll replace on finalize).
+    // Undo buffer is preserved.
     t.bufL = null;
     t.bufR = null;
   }

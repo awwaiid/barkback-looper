@@ -58,6 +58,10 @@ export type WorkletCommand =
       countInMeasures: number;
       recQuantize: 'off' | 'beat' | 'measure';
       fixedLoopMeasures: number;
+    }
+  | {
+      type: 'provideRecBuffers';
+      buffers: { track: number; l: ArrayBuffer; r: ArrayBuffer }[];
     };
 
 export interface BufferReply {

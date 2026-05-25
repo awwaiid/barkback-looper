@@ -1,4 +1,6 @@
 import type { BufferReply, EngineState, MetersData, TrackAction, WorkletCommand } from './types.ts';
+import { NUM_TRACKS } from './types.ts';
+import { MAX_RECORDING_SECONDS } from './constants.ts';
 import workletUrl from './looper-worklet.ts?worker&url';
 
 export interface EngineCallbacks {
@@ -67,8 +69,27 @@ export class LooperEngine {
     this.source.connect(this.node);
     this.node.connect(this.ctx.destination);
 
+    // Pre-allocate per-track recording buffers on the main thread and
+    // transfer them into the worklet. This keeps REC presses from
+    // triggering ~230 MB allocations on the audio thread.
+    this.provideRecBuffers(this.ctx.sampleRate);
+
     this.ready = true;
     this.cb.onLatency?.((this.ctx.baseLatency + (this.ctx.outputLatency || 0)) * 1000);
+  }
+
+  private provideRecBuffers(sampleRate: number) {
+    if (!this.node) return;
+    const bytes = sampleRate * MAX_RECORDING_SECONDS * 4;
+    const buffers: { track: number; l: ArrayBuffer; r: ArrayBuffer }[] = [];
+    const transfers: ArrayBuffer[] = [];
+    for (let i = 0; i < NUM_TRACKS; i++) {
+      const l = new ArrayBuffer(bytes);
+      const r = new ArrayBuffer(bytes);
+      buffers.push({ track: i, l, r });
+      transfers.push(l, r);
+    }
+    this.node.port.postMessage({ type: 'provideRecBuffers', buffers }, transfers);
   }
 
   async stop() {
