@@ -7,7 +7,6 @@ import type {
   WorkletCommand,
 } from './types.ts';
 import { NUM_TRACKS } from './types.ts';
-import { MAX_RECORDING_SECONDS } from './constants.ts';
 import workletUrl from './looper-worklet.ts?worker&url';
 
 export interface LatencyTestResult {
@@ -99,16 +98,28 @@ export class LooperEngine {
     this.cb.onLatency?.((this.ctx.baseLatency + (this.ctx.outputLatency || 0)) * 1000);
   }
 
+  // Pre-allocate ~60s per track. Anything longer triggers the worklet's
+  // on-demand allocation path (one-time small glitch). Reserving the full
+  // 10-minute cap upfront would be ~920 MB across 4 tracks — way too much
+  // on phones, where it can OOM the tab silently.
+  private static PRE_ALLOC_SECONDS = 60;
+
   private provideRecBuffers(sampleRate: number) {
     if (!this.node) return;
-    const bytes = sampleRate * MAX_RECORDING_SECONDS * 4;
+    const bytes = sampleRate * LooperEngine.PRE_ALLOC_SECONDS * 4;
     const buffers: { track: number; l: ArrayBuffer; r: ArrayBuffer }[] = [];
     const transfers: ArrayBuffer[] = [];
-    for (let i = 0; i < NUM_TRACKS; i++) {
-      const l = new ArrayBuffer(bytes);
-      const r = new ArrayBuffer(bytes);
-      buffers.push({ track: i, l, r });
-      transfers.push(l, r);
+    try {
+      for (let i = 0; i < NUM_TRACKS; i++) {
+        const l = new ArrayBuffer(bytes);
+        const r = new ArrayBuffer(bytes);
+        buffers.push({ track: i, l, r });
+        transfers.push(l, r);
+      }
+    } catch {
+      // OOM on a memory-constrained device — skip the pre-alloc and let
+      // the worklet allocate on demand when the user hits REC.
+      return;
     }
     this.node.port.postMessage({ type: 'provideRecBuffers', buffers }, transfers);
   }
@@ -127,13 +138,22 @@ export class LooperEngine {
     this.node?.port.postMessage(cmd);
   }
 
-  cmd(track: number, action: TrackAction) { this.send({ type: 'cmd', track, action }); }
+  // Mobile browsers (especially iOS Safari) suspend AudioContext when the
+  // tab loses focus, the screen sleeps, or for various other reasons; each
+  // user-initiated action gives the context a chance to resume.
+  ensureRunning() {
+    if (this.ctx && this.ctx.state === 'suspended') {
+      void this.ctx.resume().catch(() => {});
+    }
+  }
+
+  cmd(track: number, action: TrackAction) { this.ensureRunning(); this.send({ type: 'cmd', track, action }); }
   setGain(track: number, value: number) { this.send({ type: 'setGain', track, value }); }
   clear(track: number) { this.send({ type: 'clear', track }); }
-  clearAll() { this.send({ type: 'clearAll' }); }
-  undo(track: number) { this.send({ type: 'undo', track }); }
-  stopAll() { this.send({ type: 'stopAll' }); }
-  playAll() { this.send({ type: 'playAll' }); }
+  clearAll() { this.ensureRunning(); this.send({ type: 'clearAll' }); }
+  undo(track: number) { this.ensureRunning(); this.send({ type: 'undo', track }); }
+  stopAll() { this.ensureRunning(); this.send({ type: 'stopAll' }); }
+  playAll() { this.ensureRunning(); this.send({ type: 'playAll' }); }
   setMonitor(value: number) { this.send({ type: 'setMonitor', value }); }
 
   async listInputs(): Promise<MediaDeviceInfo[]> {

@@ -3,6 +3,8 @@ import { useSettingsStore, updateSettings, resetSettings } from '../settings/set
 import { NUM_TRACKS } from '../audio/types.ts';
 import { engine } from '../audio/store.ts';
 import type { LatencyTestResult } from '../audio/engine.ts';
+import { MidiPanel } from './MidiPanel.tsx';
+import { SessionPanel } from './SessionPanel.tsx';
 
 export function SettingsPanel({ onClose }: { onClose: () => void }) {
   const recAction = useSettingsStore(s => s.recAction);
@@ -313,6 +315,12 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
       <div className="midi-section">
         <button className="btn" onClick={resetSettings}>Reset to defaults</button>
       </div>
+
+      <hr className="panel-divider" />
+      <MidiPanel />
+
+      <hr className="panel-divider" />
+      <SessionPanel />
     </div>
   );
 }

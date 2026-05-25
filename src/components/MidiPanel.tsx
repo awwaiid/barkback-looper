@@ -30,15 +30,15 @@ export function MidiPanel() {
 
   if (!supported) {
     return (
-      <div className="midi-panel">
+      <>
         <h2>MIDI</h2>
         <p className="muted">Web MIDI not supported in this browser.</p>
-      </div>
+      </>
     );
   }
 
   return (
-    <div className="midi-panel">
+    <>
       <h2>MIDI</h2>
 
       <div className="midi-section">
@@ -108,6 +108,6 @@ export function MidiPanel() {
           Suggested for a 3-button footswitch: bind to <em>REC selected</em>, <em>Stop selected</em>, <em>Undo selected</em>.
         </p>
       )}
-    </div>
+    </>
   );
 }

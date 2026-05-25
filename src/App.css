@@ -48,7 +48,8 @@ html, body, #root {
 .app-header {
   display: flex;
   align-items: center;
-  gap: 18px;
+  flex-wrap: wrap;
+  gap: 10px 16px;
   border-bottom: 1px solid var(--line);
   padding-bottom: 14px;
 }
@@ -949,3 +950,85 @@ input[type=range]::-moz-range-thumb {
 .hint-prompt { color: var(--accent); }
 
 .muted { color: var(--text-mute); }
+
+.panel-divider {
+  border: none;
+  border-top: 1px solid var(--line);
+  margin: 18px -18px;
+}
+
+/* ===== Portrait / narrow viewports ===== */
+@media (max-width: 640px) {
+  .looper {
+    padding: 10px;
+    gap: 10px;
+  }
+
+  .app-header {
+    gap: 8px 12px;
+    padding-bottom: 10px;
+  }
+  .app-header h1 {
+    font-size: 18px;
+    flex: 1 0 auto;
+  }
+  .app-logo {
+    width: 32px;
+    height: 32px;
+  }
+  .audio-setup {
+    flex-wrap: wrap;
+    flex: 1 0 100%;
+  }
+  .audio-setup select { min-width: 160px; flex: 1 1 auto; }
+
+  .tempobar {
+    gap: 10px 14px;
+    padding: 10px 12px;
+  }
+  .tempo-display { min-width: 90px; padding: 4px 8px; }
+  .tempo-display input { font-size: 22px; width: 50px; }
+  .countin-block { margin-left: 0; }
+  .metronome-level { width: 80px; }
+
+  .transport {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+  .transport-left, .transport-right {
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+  .input-meter { width: 100px; }
+
+  /* Stack tracks 2x2 on portrait phones rather than 1-column, so the four
+     strips remain visible without scrolling far. Switch to 1-col below 400. */
+  .tracks {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+  }
+  .track-strip {
+    padding: 10px;
+    gap: 8px;
+  }
+  .fader { height: 130px; }
+  .waveform { height: 50px; }
+  .track-num { font-size: 20px; }
+
+  .btn { padding: 10px 12px; font-size: 12px; min-height: 44px; }
+  .btn-big { padding: 12px 16px; font-size: 12px; min-height: 48px; }
+
+  .midi-panel { padding: 12px; }
+  .midi-bindings { font-size: 11px; }
+  .midi-bindings th, .midi-bindings td { padding: 4px 6px; }
+}
+
+@media (max-width: 640px) {
+  /* Keyboard hints are irrelevant on touch */
+  .hints { display: none; }
+}
+
+@media (max-width: 360px) {
+  .tracks { grid-template-columns: 1fr; }
+  .tempobar { padding: 8px 10px; }
+}

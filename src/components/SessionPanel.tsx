@@ -14,7 +14,7 @@ function fmtTime(ms: number): string {
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
 }
 
-export function SessionPanel({ onClose }: { onClose: () => void }) {
+export function SessionPanel() {
   const [sessions, setSessions] = useState<SessionInfo[]>([]);
   const [name, setName] = useState('');
   const [busy, setBusy] = useState(false);
@@ -64,11 +64,8 @@ export function SessionPanel({ onClose }: { onClose: () => void }) {
   };
 
   return (
-    <div className="midi-panel">
-      <div className="session-head">
-        <h2>Sessions</h2>
-        <button className="btn btn-sm" onClick={onClose}>close</button>
-      </div>
+    <>
+      <h2>Sessions</h2>
 
       <div className="midi-section">
         <h3>Save current</h3>
@@ -111,6 +108,6 @@ export function SessionPanel({ onClose }: { onClose: () => void }) {
           </table>
         )}
       </div>
-    </div>
+    </>
   );
 }

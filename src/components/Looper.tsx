@@ -3,8 +3,6 @@ import { TrackStrip } from './TrackStrip.tsx';
 import { TransportBar } from './TransportBar.tsx';
 import { TempoBar } from './TempoBar.tsx';
 import { AudioSetup } from './AudioSetup.tsx';
-import { MidiPanel } from './MidiPanel.tsx';
-import { SessionPanel } from './SessionPanel.tsx';
 import { SettingsPanel } from './SettingsPanel.tsx';
 import {
   useAudioStore,
@@ -20,8 +18,6 @@ import { NUM_TRACKS } from '../audio/types.ts';
 import { initMidi, setActionHandlers, type MidiActionHandlers } from '../midi/midi.ts';
 
 export function Looper() {
-  const [showMidi, setShowMidi] = useState(false);
-  const [showSessions, setShowSessions] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const ready = useAudioStore(s => s.ready);
   const loopFrames = useAudioStore(s => s.loopFrames);
@@ -91,20 +87,12 @@ export function Looper() {
           <span>barkback&nbsp;looper</span>
         </h1>
         <AudioSetup />
-        <button className="btn" onClick={() => setShowMidi(s => !s)}>
-          {showMidi ? 'Hide MIDI' : 'MIDI'}
-        </button>
-        <button className="btn" onClick={() => setShowSessions(s => !s)}>
-          {showSessions ? 'Hide Sessions' : 'Sessions'}
-        </button>
         <button className="btn" onClick={() => setShowSettings(s => !s)}>
           {showSettings ? 'Hide Settings' : 'Settings'}
         </button>
       </header>
 
       {showSettings && <SettingsPanel onClose={() => setShowSettings(false)} />}
-      {showMidi && <MidiPanel />}
-      {showSessions && <SessionPanel onClose={() => setShowSessions(false)} />}
 
       <TempoBar />
       <TransportBar />
