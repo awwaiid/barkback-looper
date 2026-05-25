@@ -22,9 +22,32 @@ export interface AudioStoreState {
   tracks: TrackSnapshot[];
   inputPeak: number;
   trackPeaks: number[];
+  trackWaveforms: (Float32Array | null)[];
   selectedTrack: number;
   monitor: number;
   statusMsg: string;
+}
+
+const WAVEFORM_BUCKETS = 200;
+
+function computePeaks(l: Float32Array, r: Float32Array, buckets: number): Float32Array {
+  const out = new Float32Array(buckets);
+  const n = Math.min(l.length, r.length);
+  if (n === 0) return out;
+  const step = n / buckets;
+  for (let i = 0; i < buckets; i++) {
+    const s0 = Math.floor(i * step);
+    const s1 = Math.min(n, Math.floor((i + 1) * step));
+    let max = 0;
+    for (let j = s0; j < s1; j++) {
+      const a = Math.abs(l[j]);
+      const b = Math.abs(r[j]);
+      const m = a > b ? a : b;
+      if (m > max) max = m;
+    }
+    out[i] = max;
+  }
+  return out;
 }
 
 export const useAudioStore = create<AudioStoreState>(() => ({
@@ -38,12 +61,54 @@ export const useAudioStore = create<AudioStoreState>(() => ({
   tracks: Array.from({ length: NUM_TRACKS }, emptyTrack),
   inputPeak: 0,
   trackPeaks: Array.from({ length: NUM_TRACKS }, () => 0),
+  trackWaveforms: Array.from({ length: NUM_TRACKS }, () => null),
   selectedTrack: 0,
   monitor: 0,
   statusMsg: '',
 }));
 
 export const engine = new LooperEngine();
+
+const lastTrackSignature: string[] = Array.from({ length: NUM_TRACKS }, () => '');
+
+async function refreshWaveform(idx: number) {
+  try {
+    const reply = await engine.getTrackBuffer(idx);
+    const l = new Float32Array(reply.l);
+    const r = new Float32Array(reply.r);
+    const peaks = l.length > 0 ? computePeaks(l, r, WAVEFORM_BUCKETS) : null;
+    useAudioStore.setState(state => {
+      const next = state.trackWaveforms.slice();
+      next[idx] = peaks;
+      return { trackWaveforms: next };
+    });
+  } catch {}
+}
+
+function clearWaveform(idx: number) {
+  useAudioStore.setState(state => {
+    if (state.trackWaveforms[idx] === null) return state;
+    const next = state.trackWaveforms.slice();
+    next[idx] = null;
+    return { trackWaveforms: next };
+  });
+}
+
+function handleStateTransition(tracks: TrackSnapshot[]) {
+  // Refresh the waveform whenever a track enters a stable post-record state, or clear on empty.
+  // We don't refresh during recording/overdub because those modes change every block.
+  for (let i = 0; i < tracks.length; i++) {
+    const t = tracks[i];
+    const sig = `${t.mode}:${t.hasAudio}:${t.durationFrames}`;
+    if (sig === lastTrackSignature[i]) continue;
+    lastTrackSignature[i] = sig;
+    if (t.mode === 'empty' || !t.hasAudio) {
+      clearWaveform(i);
+    } else if (t.mode === 'playing' || t.mode === 'stopped') {
+      void refreshWaveform(i);
+    }
+  }
+}
 
 engine.setCallbacks({
   onState(s: EngineState) {
@@ -53,6 +118,7 @@ engine.setCallbacks({
       sampleRate: s.sampleRate,
       tracks: s.tracks,
     });
+    handleStateTransition(s.tracks);
   },
   onMeters(m: MetersData) {
     useAudioStore.setState({

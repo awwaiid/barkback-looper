@@ -1,4 +1,4 @@
-import { useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import {
   useAudioStore,
   trackAction,
@@ -33,7 +33,7 @@ const MODE_CLASS: Record<string, string> = {
 const recordLabel = (mode: string): string => {
   switch (mode) {
     case 'empty': return 'REC';
-    case 'recording': return 'OVERDUB';
+    case 'recording': return 'PLAY';
     case 'playing': return 'OVERDUB';
     case 'overdub': return 'PLAY';
     case 'stopped': return 'PLAY';
@@ -53,9 +53,39 @@ export function TrackStrip({ index }: Props) {
   const selected = useAudioStore(s => s.selectedTrack === index);
   const loopFrames = useAudioStore(s => s.loopFrames);
   const progress = useAudioStore(selectLoopProgress);
+  const waveform = useAudioStore(s => s.trackWaveforms[index]);
 
   const lastTapRef = useRef(0);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const showProgress = track.hasAudio && !(track.mode === 'recording' && loopFrames === 0);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const dpr = window.devicePixelRatio || 1;
+    const rect = canvas.getBoundingClientRect();
+    canvas.width = Math.max(1, Math.floor(rect.width * dpr));
+    canvas.height = Math.max(1, Math.floor(rect.height * dpr));
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    if (!waveform || waveform.length === 0) return;
+    const mid = canvas.height / 2;
+    const w = canvas.width;
+    const colWidth = w / waveform.length;
+    // Use track color hint based on mode
+    let color = 'rgba(108, 140, 255, 0.55)';
+    if (track.mode === 'recording' || track.mode === 'overdub') color = 'rgba(255, 71, 87, 0.65)';
+    else if (track.mode === 'playing') color = 'rgba(45, 212, 126, 0.6)';
+    else if (track.mode === 'stopped') color = 'rgba(180, 188, 210, 0.45)';
+    ctx.fillStyle = color;
+    for (let i = 0; i < waveform.length; i++) {
+      const h = Math.max(1, waveform[i] * canvas.height);
+      const x = Math.floor(i * colWidth);
+      const cw = Math.max(1, Math.floor(colWidth) - 1);
+      ctx.fillRect(x, mid - h / 2, cw, h);
+    }
+  }, [waveform, track.mode]);
 
   const onSelectClick = () => setSelectedTrack(index);
 
@@ -77,7 +107,11 @@ export function TrackStrip({ index }: Props) {
         <span className={`track-mode ${MODE_CLASS[track.mode]}`}>{MODE_LABEL[track.mode]}</span>
       </div>
 
-      <div className="waveform" aria-label="loop progress">
+      <div className="waveform" aria-label="loop waveform">
+        <canvas ref={canvasRef} className="waveform-canvas" />
+        {showProgress && (
+          <div className="waveform-playhead" style={{ left: `${progress * 100}%` }} />
+        )}
         {showProgress && (
           <div className="waveform-fill" style={{ width: `${progress * 100}%` }} />
         )}

@@ -77,6 +77,7 @@ class LooperProcessor extends AudioWorkletProcessor {
           }
         }
         this.finalizeGrow();
+        this.playhead = 0;
         this.publishState();
         break;
       case 'playAll':
@@ -243,9 +244,10 @@ class LooperProcessor extends AudioWorkletProcessor {
       }
       // else: tracks 2-4 can't record before track 1 sets the loop
     } else if (t.mode === 'recording') {
+      // First tap after starting record exits recording into playback.
+      // The loop is now established; a second tap will enter overdub.
       if (idx === 0 && this.loopFrames === 0) this.finalizeGrow();
-      this.snapshot(t);
-      t.mode = 'overdub';
+      t.mode = 'playing';
     } else if (t.mode === 'playing') {
       this.snapshot(t);
       t.mode = 'overdub';
@@ -298,6 +300,14 @@ class LooperProcessor extends AudioWorkletProcessor {
     const haveLoop = this.loopFrames > 0;
     let ph = this.playhead;
 
+    let anyActive = false;
+    for (const t of this.tracks) {
+      if (t.mode === 'playing' || t.mode === 'overdub' || t.mode === 'recording') {
+        anyActive = true;
+        break;
+      }
+    }
+
     for (let i = 0; i < block; i++) {
       const sL = hasInput ? inL[i] : 0;
       const sR = hasInput ? inR[i] : 0;
@@ -340,7 +350,9 @@ class LooperProcessor extends AudioWorkletProcessor {
             t.bufR[pos] = t.bufR[pos] + sR;
           }
         }
-        ph = (ph + 1) % this.loopFrames;
+        if (anyActive) {
+          ph = (ph + 1) % this.loopFrames;
+        }
       }
 
       outL[i] = mixL;
