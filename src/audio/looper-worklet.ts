@@ -2,7 +2,6 @@
 
 const NUM_TRACKS = 4;
 const MAX_LOOP_SECONDS = 120;
-const MAX_CYCLES = 8; // tracks 2-4 can be up to 8x the master loop
 
 type Mode = 'empty' | 'recording' | 'playing' | 'overdub' | 'stopped' | 'armed';
 type RecAction = 'rec-play' | 'rec-overdub';
@@ -282,9 +281,9 @@ class LooperProcessor extends AudioWorkletProcessor {
       t.cycleIndex = 0;
       this.playhead = 0;
     } else {
-      // Snap to nearest integer multiple of masterFrames (min 1, max MAX_CYCLES).
+      // Snap to nearest integer multiple of masterFrames (min 1).
       const ratio = t.growIdx / this.masterFrames;
-      const cycles = Math.max(1, Math.min(MAX_CYCLES, Math.round(ratio)));
+      const cycles = Math.max(1, Math.round(ratio));
       const finalLen = cycles * this.masterFrames;
       const out_l = new Float32Array(finalLen);
       const out_r = new Float32Array(finalLen);
@@ -343,8 +342,9 @@ class LooperProcessor extends AudioWorkletProcessor {
       t.growIdx = 0;
       this.playhead = 0;
     } else if (this.masterFrames > 0) {
-      // Any later record: grow up to MAX_CYCLES * masterFrames so length can snap up.
-      const maxLen = MAX_CYCLES * this.masterFrames;
+      // Any later record: same absolute time cap as track 1.
+      // Length will snap to nearest integer multiple of master on stop.
+      const maxLen = sampleRate * MAX_LOOP_SECONDS;
       t.growL = new Float32Array(maxLen);
       t.growR = new Float32Array(maxLen);
       t.growIdx = 0;
@@ -544,10 +544,6 @@ class LooperProcessor extends AudioWorkletProcessor {
             t.growIdx++;
             if (ti === 0 && fixedFrames > 0 && this.masterFrames === 0 && t.growIdx >= fixedFrames) {
               fixedAutoFinishPending = true;
-            }
-            // Auto-cap tracks 2-4 at MAX_CYCLES * master
-            if (haveMaster && ti !== 0 && t.growIdx >= MAX_CYCLES * this.masterFrames) {
-              this.finishRecord(ti);
             }
           }
         }
