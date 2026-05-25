@@ -130,45 +130,46 @@ export function TrackStrip({ index }: Props) {
         <div className="meter-fill" style={{ width: `${peakToPct(peak)}%` }} />
       </div>
 
-      <Fader
-        value={track.gain}
-        max={1.5}
-        unity={1.0}
-        onChange={(v) => setTrackGain(index, v)}
-        label={`track ${index + 1} volume`}
-      />
-
-      <div className="track-buttons">
-        <button
-          className="btn btn-rec"
-          onClick={(e) => { e.stopPropagation(); trackAction(index, 'rec'); }}
-        >
-          {recordLabel(track.mode, recAction)}
-        </button>
-        <button
-          className="btn btn-stop"
-          disabled={track.mode === 'empty'}
-          onClick={(e) => { e.stopPropagation(); trackAction(index, 'stop'); }}
-        >
-          STOP
-        </button>
-        <button
-          className="btn btn-undo"
-          disabled={!track.canUndo}
-          onClick={(e) => { e.stopPropagation(); undoTrack(index); }}
-        >
-          UNDO
-        </button>
-        <button
-          className="btn btn-clear"
-          disabled={!track.hasAudio}
-          onClick={(e) => {
-            e.stopPropagation();
-            if (confirm(`Clear track ${index + 1}?`)) clearTrack(index);
-          }}
-        >
-          CLR
-        </button>
+      <div className="track-controls">
+        <Fader
+          value={track.gain}
+          max={1.5}
+          unity={1.0}
+          onChange={(v) => setTrackGain(index, v)}
+          label={`track ${index + 1} volume`}
+        />
+        <div className="track-buttons">
+          <button
+            className="btn btn-rec"
+            onClick={(e) => { e.stopPropagation(); trackAction(index, 'rec'); }}
+          >
+            {recordLabel(track.mode, recAction)}
+          </button>
+          <button
+            className="btn btn-stop"
+            disabled={track.mode === 'empty'}
+            onClick={(e) => { e.stopPropagation(); trackAction(index, 'stop'); }}
+          >
+            STOP
+          </button>
+          <button
+            className="btn btn-undo"
+            disabled={!track.canUndo}
+            onClick={(e) => { e.stopPropagation(); undoTrack(index); }}
+          >
+            UNDO
+          </button>
+          <button
+            className="btn btn-clear"
+            disabled={!track.hasAudio}
+            onClick={(e) => {
+              e.stopPropagation();
+              if (confirm(`Clear track ${index + 1}?`)) clearTrack(index);
+            }}
+          >
+            CLR
+          </button>
+        </div>
       </div>
 
       <button

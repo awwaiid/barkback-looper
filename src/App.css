@@ -551,13 +551,26 @@ html, body, #root {
   pointer-events: none;
 }
 
+.track-controls {
+  display: grid;
+  grid-template-columns: 72px 1fr;
+  gap: 12px;
+  align-items: stretch;
+}
+
+.track-controls .fader {
+  height: 100%;
+  min-height: 168px;
+  margin: 0;
+}
+
 .track-buttons {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-rows: repeat(4, 1fr);
   gap: 6px;
 }
 
-.track-buttons .btn { padding: 14px 6px; font-size: 12px; min-height: 52px; }
+.track-buttons .btn { padding: 8px 6px; font-size: 12px; min-height: 44px; }
 
 .track-export {
   align-self: flex-end;
@@ -1011,7 +1024,8 @@ input[type=range]::-moz-range-thumb {
     padding: 10px;
     gap: 8px;
   }
-  .fader { height: 130px; }
+  .track-controls { grid-template-columns: 60px 1fr; gap: 8px; }
+  .track-controls .fader { min-height: 140px; }
   .waveform { height: 50px; }
   .track-num { font-size: 20px; }
 
