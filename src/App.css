@@ -435,17 +435,113 @@ html, body, #root {
   transition: width 0.06s linear;
 }
 
-.fader-row {
-  display: grid;
-  grid-template-columns: auto 1fr auto;
-  align-items: center;
-  gap: 8px;
-  font-family: var(--mono);
-  font-size: 11px;
-  color: var(--text-mute);
+/* === Vertical fader === */
+
+.fader {
+  position: relative;
+  width: 100%;
+  height: 168px;
+  margin: 4px 0;
+  touch-action: none;
+  user-select: none;
+  cursor: ns-resize;
+  -webkit-tap-highlight-color: transparent;
+  outline: none;
+  border-radius: 8px;
+  transition: background 0.1s;
 }
-.fader-row input[type=range] { width: 100%; }
-.fader-val { color: var(--text-dim); min-width: 24px; text-align: right; }
+.fader:focus-visible {
+  background: rgba(108, 140, 255, 0.06);
+  box-shadow: inset 0 0 0 1px var(--selected);
+}
+
+/* Inner usable height matches the JS `inner` padding constant. */
+.fader-track {
+  position: absolute;
+  top: 12px;
+  bottom: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 8px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.fader-fill {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: linear-gradient(180deg, var(--accent-2), var(--accent));
+  border-radius: 4px;
+}
+
+.fader-unity {
+  position: absolute;
+  left: -10px;
+  right: -10px;
+  height: 1px;
+  background: rgba(255,255,255,0.18);
+  pointer-events: none;
+}
+
+.fader-thumb {
+  position: absolute;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 56px;
+  height: 26px;
+  background: linear-gradient(180deg, #ffe28a, #f5b900);
+  border: 1px solid #1a1500;
+  border-radius: 5px;
+  box-shadow:
+    0 2px 4px rgba(0,0,0,0.45),
+    inset 0 1px 0 rgba(255,255,255,0.4),
+    inset 0 -1px 0 rgba(0,0,0,0.15);
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.fader-thumb-grip {
+  display: block;
+  width: 30px;
+  height: 6px;
+  background:
+    linear-gradient(
+      to bottom,
+      rgba(0,0,0,0.3) 0,
+      rgba(0,0,0,0.3) 1px,
+      transparent 1px,
+      transparent 3px,
+      rgba(0,0,0,0.3) 3px,
+      rgba(0,0,0,0.3) 4px,
+      transparent 4px,
+      transparent 6px
+    );
+}
+
+.fader:active .fader-thumb,
+.fader:focus-visible .fader-thumb {
+  box-shadow:
+    0 3px 6px rgba(0,0,0,0.5),
+    inset 0 1px 0 rgba(255,255,255,0.5),
+    inset 0 -1px 0 rgba(0,0,0,0.2),
+    0 0 0 2px rgba(255, 122, 92, 0.45);
+}
+
+.fader-readout {
+  position: absolute;
+  left: 8px;
+  bottom: -2px;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--text-mute);
+  pointer-events: none;
+}
 
 .track-buttons {
   display: grid;

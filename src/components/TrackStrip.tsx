@@ -10,6 +10,7 @@ import {
 import { exportTrackWav } from '../audio/storage.ts';
 import { useSettingsStore } from '../settings/settings.ts';
 import { peakToPct } from '../audio/meter.ts';
+import { Fader } from './Fader.tsx';
 
 interface Props {
   index: number;
@@ -124,18 +125,13 @@ export function TrackStrip({ index }: Props) {
         <div className="meter-fill" style={{ width: `${peakToPct(peak)}%` }} />
       </div>
 
-      <div className="fader-row">
-        <span className="fader-label">vol</span>
-        <input
-          type="range"
-          min="0"
-          max="1.5"
-          step="0.01"
-          value={track.gain}
-          onChange={(e) => setTrackGain(index, parseFloat(e.currentTarget.value))}
-        />
-        <span className="fader-val">{(track.gain * 100).toFixed(0)}</span>
-      </div>
+      <Fader
+        value={track.gain}
+        max={1.5}
+        unity={1.0}
+        onChange={(v) => setTrackGain(index, v)}
+        label={`track ${index + 1} volume`}
+      />
 
       <div className="track-buttons">
         <button
