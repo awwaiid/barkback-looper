@@ -53,6 +53,7 @@ export function TrackStrip({ index }: Props) {
   const loopFrames = useAudioStore(s => s.loopFrames);
   const progress = useAudioStore(s => s.trackProgress[index] ?? 0);
   const waveform = useAudioStore(s => s.trackWaveforms[index]);
+  const globalWaveformPeak = useAudioStore(s => s.trackWaveformPeak);
   const recAction = useSettingsStore(s => s.recAction);
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -78,13 +79,17 @@ export function TrackStrip({ index }: Props) {
     else if (track.mode === 'playing') color = 'rgba(45, 212, 126, 0.6)';
     else if (track.mode === 'stopped') color = 'rgba(180, 188, 210, 0.45)';
     ctx.fillStyle = color;
+    // Normalize to the loudest peak across all tracks so quieter tracks read
+    // as quieter, but with a floor so a single very-soft track still has a
+    // visible waveform instead of being magnified into noise.
+    const scaleDenom = Math.max(0.05, globalWaveformPeak);
     for (let i = 0; i < waveform.length; i++) {
-      const h = Math.max(1, waveform[i] * canvas.height);
+      const h = Math.max(1, (waveform[i] / scaleDenom) * canvas.height);
       const x = Math.floor(i * colWidth);
       const cw = Math.max(1, Math.floor(colWidth) - 1);
       ctx.fillRect(x, mid - h / 2, cw, h);
     }
-  }, [waveform, track.mode]);
+  }, [waveform, track.mode, globalWaveformPeak]);
 
   const onSelectClick = () => setSelectedTrack(index);
 

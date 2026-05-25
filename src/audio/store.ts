@@ -30,6 +30,7 @@ export interface AudioStoreState {
   trackPeaks: number[];
   trackProgress: number[];
   trackWaveforms: (Float32Array | null)[];
+  trackWaveformPeak: number; // largest peak across all currently-loaded waveforms
   cpuAvgPct: number;
   cpuMaxPct: number;
   cpuOverruns: number;
@@ -76,6 +77,7 @@ export const useAudioStore = create<AudioStoreState>(() => ({
   trackPeaks: Array.from({ length: NUM_TRACKS }, () => 0),
   trackProgress: Array.from({ length: NUM_TRACKS }, () => 0),
   trackWaveforms: Array.from({ length: NUM_TRACKS }, () => null),
+  trackWaveformPeak: 0,
   cpuAvgPct: 0,
   cpuMaxPct: 0,
   cpuOverruns: 0,
@@ -88,6 +90,17 @@ export const engine = new LooperEngine();
 
 const lastTrackSignature: string[] = Array.from({ length: NUM_TRACKS }, () => '');
 
+function computeGlobalWaveformPeak(waveforms: (Float32Array | null)[]): number {
+  let m = 0;
+  for (const w of waveforms) {
+    if (!w) continue;
+    for (let i = 0; i < w.length; i++) {
+      if (w[i] > m) m = w[i];
+    }
+  }
+  return m;
+}
+
 async function refreshWaveform(idx: number) {
   try {
     const reply = await engine.getTrackBuffer(idx);
@@ -97,7 +110,7 @@ async function refreshWaveform(idx: number) {
     useAudioStore.setState(state => {
       const next = state.trackWaveforms.slice();
       next[idx] = peaks;
-      return { trackWaveforms: next };
+      return { trackWaveforms: next, trackWaveformPeak: computeGlobalWaveformPeak(next) };
     });
   } catch {}
 }
@@ -107,7 +120,7 @@ function clearWaveform(idx: number) {
     if (state.trackWaveforms[idx] === null) return state;
     const next = state.trackWaveforms.slice();
     next[idx] = null;
-    return { trackWaveforms: next };
+    return { trackWaveforms: next, trackWaveformPeak: computeGlobalWaveformPeak(next) };
   });
 }
 
