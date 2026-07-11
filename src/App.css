@@ -1096,6 +1096,17 @@ input[type=range]::-moz-range-thumb {
 }
 .hint-prompt { color: var(--accent); }
 
+.repo-link {
+  margin-left: auto;
+  color: var(--text-mute);
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+}
+.repo-link:hover {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
 .muted { color: var(--text-mute); }
 
 .panel-divider {
@@ -1175,8 +1186,10 @@ input[type=range]::-moz-range-thumb {
 }
 
 @media (max-width: 640px) {
-  /* Keyboard hints are irrelevant on touch */
-  .hints { display: none; }
+  /* Keyboard hints are irrelevant on touch, but keep the repo link visible */
+  .hints span { display: none; }
+  .hints { justify-content: center; padding-top: 10px; }
+  .repo-link { margin-left: 0; }
 }
 
 @media (max-width: 360px) {

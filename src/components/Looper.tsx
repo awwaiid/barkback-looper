@@ -143,6 +143,14 @@ export function Looper() {
         {ready && loopFrames === 0 && track1Mode !== 'recording' && (
           <span className="hint-prompt">Hit REC on Track 1 to set the master loop length.</span>
         )}
+        <a
+          className="repo-link"
+          href="https://github.com/awwaiid/barkback-looper"
+          target="_blank"
+          rel="noreferrer"
+        >
+          GitHub
+        </a>
       </footer>
     </div>
   );
