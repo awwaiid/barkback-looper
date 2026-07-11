@@ -5,11 +5,14 @@ import {
   stopAll,
   playAll,
   clearAll,
+  setMonitor,
 } from '../audio/store.ts';
 import { peakToPct } from '../audio/meter.ts';
 
 export function TransportBar() {
   const inputPeak = useAudioStore(s => s.inputPeak);
+  const ready = useAudioStore(s => s.ready);
+  const monitor = useAudioStore(s => s.monitor);
   const latencyMs = useAudioStore(s => s.latencyMs);
   const sampleRate = useAudioStore(s => s.sampleRate);
   const loopFrames = useAudioStore(s => s.loopFrames);
@@ -67,10 +70,22 @@ export function TransportBar() {
       </div>
 
       <div className="transport-right">
-        <span className="input-label">in</span>
-        <div className="meter input-meter">
-          <div className="meter-fill" style={{ width: `${peakToPct(inputPeak)}%` }} />
+        <div className="input-meter-row">
+          <span className="input-label">in</span>
+          <div className="meter input-meter">
+            <div className="meter-fill" style={{ width: `${peakToPct(inputPeak)}%` }} />
+          </div>
         </div>
+        {ready && (
+          <label className="monitor-row">
+            <span>monitor</span>
+            <input
+              type="range" min="0" max="1" step="0.01"
+              value={monitor}
+              onChange={(e) => setMonitor(parseFloat(e.currentTarget.value))}
+            />
+          </label>
+        )}
       </div>
     </div>
   );

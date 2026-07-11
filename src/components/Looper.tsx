@@ -19,6 +19,7 @@ import { initMidi, setActionHandlers, type MidiActionHandlers } from '../midi/mi
 
 export function Looper() {
   const [showSettings, setShowSettings] = useState(false);
+  const [showTempo, setShowTempo] = useState(false);
   const ready = useAudioStore(s => s.ready);
   const loopFrames = useAudioStore(s => s.loopFrames);
   const track1Mode = useAudioStore(s => s.tracks[0]?.mode);
@@ -47,31 +48,41 @@ export function Looper() {
   }, []);
 
   useEffect(() => {
+    // Number row triggers rec/play/overdub. Match both the digits and their
+    // shifted symbols so it works regardless of keyboard layout (some layouts
+    // require Shift to type a number, yielding the symbol instead).
+    const numMap: Record<string, number> = {
+      '1': 0, '2': 1, '3': 2, '4': 3,
+      '!': 0, '@': 1, '#': 2, '$': 3,
+    };
+    const qwerMap: Record<string, number> = { q: 0, w: 1, e: 2, r: 3 };
+
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
-      const key = e.key.toLowerCase();
-      if (key >= '1' && key <= '4') {
-        const idx = parseInt(key, 10) - 1;
+      const key = e.key;
+      const lower = key.toLowerCase();
+      if (key in numMap) {
+        const idx = numMap[key];
+        setSelectedTrack(idx);
+        trackAction(idx, 'rec');
+        e.preventDefault();
+      } else if (lower in qwerMap) {
+        const idx = qwerMap[lower];
         if (e.shiftKey) {
           if (confirm(`Clear track ${idx + 1}?`)) clearTrack(idx);
         } else {
-          setSelectedTrack(idx);
-          trackAction(idx, 'rec');
+          trackAction(idx, 'stop');
         }
-        e.preventDefault();
-      } else if (key === 'q' || key === 'w' || key === 'e' || key === 'r') {
-        const map: Record<string, number> = { q: 0, w: 1, e: 2, r: 3 };
-        trackAction(map[key], 'stop');
         e.preventDefault();
       } else if (key === ' ') {
         stopAll();
         e.preventDefault();
-      } else if (key === 'u') {
+      } else if (lower === 'u') {
         undoTrack(getSelectedTrack());
         e.preventDefault();
-      } else if (key === 'arrowright') {
+      } else if (lower === 'arrowright') {
         setSelectedTrack((getSelectedTrack() + 1) % NUM_TRACKS);
-      } else if (key === 'arrowleft') {
+      } else if (lower === 'arrowleft') {
         setSelectedTrack((getSelectedTrack() - 1 + NUM_TRACKS) % NUM_TRACKS);
       }
     };
@@ -92,6 +103,20 @@ export function Looper() {
           <span>barkback&nbsp;looper</span>
         </h1>
         <AudioSetup />
+        <button
+          className={`btn btn-metronome-toggle ${showTempo ? 'on' : ''}`}
+          onClick={() => setShowTempo(s => !s)}
+          aria-pressed={showTempo}
+          aria-label="Toggle metronome bar"
+          title="Metronome"
+        >
+          <svg className="metronome-icon" viewBox="0 0 16 16" aria-hidden="true">
+            <path d="M6 1.5h4l3 13H3z" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
+            <line x1="8" y1="13" x2="11" y2="4" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+            <circle cx="10.4" cy="6" r="1.1" fill="currentColor" />
+          </svg>
+          <span>Metronome</span>
+        </button>
         <button className="btn" onClick={() => setShowSettings(s => !s)}>
           {showSettings ? 'Hide Settings' : 'Settings'}
         </button>
@@ -99,7 +124,7 @@ export function Looper() {
 
       {showSettings && <SettingsPanel onClose={() => setShowSettings(false)} />}
 
-      <TempoBar />
+      {showTempo && <TempoBar />}
       <TransportBar />
 
       <div className="tracks">
@@ -111,7 +136,7 @@ export function Looper() {
       <footer className="hints">
         <span><kbd>1</kbd>–<kbd>4</kbd> rec/cycle track</span>
         <span><kbd>Q</kbd>–<kbd>R</kbd> stop track</span>
-        <span><kbd>Shift</kbd>+<kbd>1</kbd>–<kbd>4</kbd> clear track</span>
+        <span><kbd>Shift</kbd>+<kbd>Q</kbd>–<kbd>R</kbd> clear track</span>
         <span><kbd>U</kbd> undo selected</span>
         <span><kbd>Space</kbd> all stop</span>
         <span><kbd>←</kbd>/<kbd>→</kbd> select track</span>

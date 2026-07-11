@@ -100,15 +100,103 @@ html, body, #root {
   flex: 1;
 }
 
-.audio-setup select {
-  background: var(--panel-2);
-  color: var(--text);
-  border: 1px solid var(--line);
-  padding: 6px 10px;
-  border-radius: 6px;
-  font: inherit;
-  min-width: 200px;
+.input-picker {
+  position: relative;
 }
+
+.input-picker .btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.input-btn-connected {
+  border-color: rgba(45, 212, 126, 0.4);
+  background: rgba(45, 212, 126, 0.1);
+  color: var(--text);
+}
+.input-btn-connected:hover:not(:disabled) {
+  background: rgba(45, 212, 126, 0.16);
+  border-color: rgba(45, 212, 126, 0.6);
+}
+
+.input-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--play);
+  box-shadow: 0 0 6px rgba(45, 212, 126, 0.7);
+  flex: none;
+}
+
+.input-btn-label {
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.input-caret {
+  font-size: 10px;
+  opacity: 0.7;
+  margin-left: -2px;
+}
+
+.input-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 40;
+  min-width: 240px;
+  max-width: 340px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 4px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.input-menu-heading {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-mute);
+  padding: 6px 10px 4px;
+}
+
+.input-menu-item {
+  text-align: left;
+  background: none;
+  border: none;
+  color: var(--text);
+  font: inherit;
+  padding: 8px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.input-menu-item:hover { background: var(--line); }
+
+.input-menu-item.active {
+  color: var(--play);
+}
+.input-menu-item.active::before {
+  content: "✓ ";
+}
+
+.input-menu-disconnect {
+  margin-top: 4px;
+  border-top: 1px solid var(--line);
+  border-radius: 0 0 6px 6px;
+  color: var(--rec);
+}
+.input-menu-disconnect:hover { background: rgba(255, 71, 87, 0.12); }
 
 .monitor-row {
   display: flex;
@@ -117,16 +205,6 @@ html, body, #root {
   color: var(--text-dim);
 }
 .monitor-row input[type=range] { width: 100px; }
-
-.ok-pill {
-  background: rgba(45, 212, 126, 0.12);
-  color: var(--play);
-  border: 1px solid rgba(45, 212, 126, 0.4);
-  padding: 3px 10px;
-  border-radius: 999px;
-  font-size: 12px;
-  font-family: var(--mono);
-}
 
 .status-err {
   color: var(--rec);
@@ -228,10 +306,34 @@ html, body, #root {
   box-shadow: var(--shadow);
 }
 
-.transport-left, .transport-right {
+.transport-left {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.transport-right {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.input-meter-row,
+.transport-right .monitor-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.input-meter-row .input-label,
+.transport-right .monitor-row > span {
+  width: 52px;
+  text-align: right;
+  font-family: var(--mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  color: var(--text-mute);
 }
 
 .transport-center {
@@ -804,6 +906,22 @@ html, body, #root {
   color: var(--accent);
 }
 
+.btn-metronome-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.btn-metronome-toggle .metronome-icon {
+  width: 14px;
+  height: 14px;
+  display: block;
+}
+.btn-metronome-toggle.on {
+  background: rgba(247, 201, 72, 0.16);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
 .metronome-level {
   width: 100px;
 }
@@ -1024,9 +1142,12 @@ input[type=range]::-moz-range-thumb {
     grid-template-columns: 1fr;
     gap: 12px;
   }
-  .transport-left, .transport-right {
+  .transport-left {
     justify-content: center;
     flex-wrap: wrap;
+  }
+  .transport-right {
+    align-items: center;
   }
   .input-meter { width: 100px; }
 
