@@ -209,8 +209,8 @@ export class LooperEngine {
     });
   }
 
-  loadBuffer(track: number, l: ArrayBuffer, r: ArrayBuffer) {
-    this.send({ type: 'loadBuffer', track, l, r });
+  loadBuffer(track: number, l: ArrayBuffer, r: ArrayBuffer, anchor?: number) {
+    this.send({ type: 'loadBuffer', track, l, r, anchor });
   }
 
   setRecAction(value: 'rec-play' | 'rec-overdub') {

@@ -10,6 +10,7 @@ export interface TrackSnapshot {
   canUndo: boolean;
   cycles: number;       // how many master cycles this track spans
   cycleIndex: number;   // current cycle being played (0..cycles-1)
+  anchor: number;       // master-position phase offset of buffer[0], in frames
 }
 
 export interface EngineState {
@@ -50,7 +51,7 @@ export type WorkletCommand =
   | { type: 'getBuffer'; track: number; reqId: number }
   | { type: 'getMix'; reqId: number }
   | { type: 'getStems'; reqId: number }
-  | { type: 'loadBuffer'; track: number; l: ArrayBuffer; r: ArrayBuffer }
+  | { type: 'loadBuffer'; track: number; l: ArrayBuffer; r: ArrayBuffer; anchor?: number }
   | { type: 'setRecAction'; value: 'rec-play' | 'rec-overdub' }
   | { type: 'setAutoRec'; enabled: boolean; threshold: number }
   | {

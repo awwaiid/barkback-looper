@@ -209,7 +209,7 @@ class LooperProcessor extends AudioWorkletProcessor {
         this.sendStems(msg.reqId);
         break;
       case 'loadBuffer':
-        this.loadBuffer(msg.track, msg.l, msg.r);
+        this.loadBuffer(msg.track, msg.l, msg.r, msg.anchor);
         break;
       case 'setRecAction':
         this.recAction = msg.value;
@@ -287,12 +287,23 @@ class LooperProcessor extends AudioWorkletProcessor {
     if (total > cap) total = cap;
     const mixL = new Float32Array(total);
     const mixR = new Float32Array(total);
+    const M = this.masterFrames;
     for (const t of this.tracks) {
       if (!t.bufL || !t.bufR) continue;
       const len = t.bufL.length;
       const g = t.gain;
+      const a = t.anchor;
+      const cyc = t.cycles;
+      // Anchor-align each track the way process() plays it (buffer[0] at master
+      // position `anchor`) so the mix matches what was heard, and matches the
+      // sum of the exported stems, for tracks recorded off the downbeat.
       for (let i = 0; i < total; i++) {
-        const pos = i % len;
+        const ph = i % M;
+        const masterLoop = Math.floor(i / M);
+        const virtualPos = a === 0 ? ph : (ph - a + M) % M;
+        const cycleIndex = masterLoop % cyc;
+        const effCycle = a !== 0 && ph < a ? (cycleIndex - 1 + cyc) % cyc : cycleIndex;
+        const pos = (effCycle * M + virtualPos) % len;
         mixL[i] += t.bufL[pos] * g;
         mixR[i] += t.bufR[pos] * g;
       }
@@ -360,7 +371,7 @@ class LooperProcessor extends AudioWorkletProcessor {
     this.port.postMessage({ type: 'stems', reqId, sampleRate, stems }, transfers);
   }
 
-  loadBuffer(idx: number, lBuf: ArrayBuffer, rBuf: ArrayBuffer) {
+  loadBuffer(idx: number, lBuf: ArrayBuffer, rBuf: ArrayBuffer, anchor?: number) {
     const l = new Float32Array(lBuf);
     const r = new Float32Array(rBuf);
     if (l.length === 0) return;
@@ -378,6 +389,11 @@ class LooperProcessor extends AudioWorkletProcessor {
     const c = Math.max(1, Math.round(l.length / this.masterFrames));
     t.cycles = c;
     t.cycleIndex = 0;
+    // Restore the recorded phase offset so the track lines up with the others
+    // exactly as it did before saving (0 when absent, e.g. older sessions).
+    t.anchor = anchor !== undefined
+      ? ((anchor % this.masterFrames) + this.masterFrames) % this.masterFrames
+      : 0;
     this.publishState();
   }
 
@@ -622,6 +638,7 @@ class LooperProcessor extends AudioWorkletProcessor {
       canUndo: t.undoL !== null || t.bufL !== null,
       cycles: t.cycles,
       cycleIndex: t.cycleIndex,
+      anchor: t.anchor,
     }));
     this.port.postMessage({
       type: 'state',

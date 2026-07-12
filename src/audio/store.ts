@@ -12,6 +12,7 @@ const emptyTrack = (): TrackSnapshot => ({
   canUndo: false,
   cycles: 1,
   cycleIndex: 0,
+  anchor: 0,
 });
 
 export interface AudioStoreState {

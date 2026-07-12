@@ -10,6 +10,7 @@ interface SessionMeta {
   version: 1;
   settings: Settings;
   trackGains: number[];
+  trackAnchors?: number[]; // per-track phase offset (frames); absent in old sessions
 }
 
 async function getRoot(): Promise<FileSystemDirectoryHandle | null> {
@@ -95,9 +96,9 @@ export async function exportTrackWav(track: number): Promise<void> {
 // them into a DAW at 0:00 and they line up as performed. Stems are raw
 // (pre-fader) so levels/effects can be set in the DAW.
 //
-// Where the File System Access API exists, one folder picker drops all files
-// into a chosen folder; otherwise each file downloads separately (the browser
-// may ask to allow multiple downloads).
+// All files download straight to the browser's default location (no
+// destination prompt). A shared timestamped prefix keeps them grouped; the
+// browser may ask once to allow multiple downloads.
 export async function exportStems(): Promise<void> {
   const reply = await engine.getStems();
   const files: { name: string; blob: Blob }[] = [];
@@ -113,28 +114,9 @@ export async function exportStems(): Promise<void> {
     return;
   }
 
-  const folder = `barkback-stems-${timestamp()}`;
-  const w = window as any;
-  if (typeof w.showDirectoryPicker === 'function') {
-    try {
-      const dir = await w.showDirectoryPicker({ mode: 'readwrite' });
-      const sub = await dir.getDirectoryHandle(folder, { create: true });
-      for (const f of files) {
-        const fh = await sub.getFileHandle(f.name, { create: true });
-        const writable = await fh.createWritable();
-        await writable.write(f.blob);
-        await writable.close();
-      }
-      return;
-    } catch (e: any) {
-      if (e?.name === 'AbortError') return;
-      // Any other failure falls through to per-file downloads below.
-    }
-  }
-
-  // Fallback: download each stem separately, prefixed so they group together.
+  const prefix = `barkback-stems-${timestamp()}`;
   for (const f of files) {
-    anchorDownload(f.blob, `${folder}-${f.name}`);
+    anchorDownload(f.blob, `${prefix}-${f.name}`);
   }
 }
 
@@ -201,11 +183,13 @@ export async function saveSession(name: string): Promise<void> {
     await w.close();
   }
 
-  // Persist settings + per-track gains so the session restores exactly.
+  // Persist settings + per-track gains and phase anchors so the session
+  // restores exactly (anchors keep off-downbeat tracks in sync on reload).
   const meta: SessionMeta = {
     version: 1,
     settings: currentSettings(),
     trackGains: useAudioStore.getState().tracks.map(t => t.gain),
+    trackAnchors: useAudioStore.getState().tracks.map(t => t.anchor),
   };
   const metaFile = await dir.getFileHandle(META_FILE, { create: true });
   const mw = await metaFile.createWritable();
@@ -216,6 +200,18 @@ export async function saveSession(name: string): Promise<void> {
 export async function loadSession(name: string): Promise<void> {
   const dir = await getSessionDir(name, false);
   if (!dir) throw new Error('OPFS not available');
+
+  // Read metadata first so we can restore each track's phase anchor as its
+  // buffer is loaded (older sessions have no metadata — anchors default to 0).
+  let meta: Partial<SessionMeta> | null = null;
+  try {
+    const fh = await dir.getFileHandle(META_FILE, { create: false });
+    meta = JSON.parse(await (await fh.getFile()).text()) as Partial<SessionMeta>;
+  } catch {
+    meta = null;
+  }
+  const anchors = Array.isArray(meta?.trackAnchors) ? meta!.trackAnchors! : [];
+
   for (let i = 0; i < NUM_TRACKS; i++) {
     try {
       const fh = await dir.getFileHandle(`track${i + 1}.wav`, { create: false });
@@ -223,18 +219,17 @@ export async function loadSession(name: string): Promise<void> {
       const buf = await file.arrayBuffer();
       const decoded = decodeWav(buf);
       if (decoded) {
-        engine.loadBuffer(i, decoded.l.buffer as ArrayBuffer, decoded.r.buffer as ArrayBuffer);
+        const anchor = typeof anchors[i] === 'number' ? anchors[i] : undefined;
+        engine.loadBuffer(i, decoded.l.buffer as ArrayBuffer, decoded.r.buffer as ArrayBuffer, anchor);
       }
     } catch {
       // missing track is fine
     }
   }
 
-  // Restore settings + per-track gains if this session has them. Applied
-  // after loading buffers so the gains win over the loaded-track snapshot.
-  try {
-    const fh = await dir.getFileHandle(META_FILE, { create: false });
-    const meta = JSON.parse(await (await fh.getFile()).text()) as Partial<SessionMeta>;
+  // Restore settings + per-track gains. Applied after loading buffers so the
+  // gains win over the loaded-track snapshot.
+  if (meta) {
     if (meta.settings && typeof meta.settings === 'object') {
       updateSettings(meta.settings);
     }
@@ -243,8 +238,6 @@ export async function loadSession(name: string): Promise<void> {
         if (i < NUM_TRACKS && typeof g === 'number') setTrackGain(i, g);
       });
     }
-  } catch {
-    // Older sessions have no metadata — leave current settings/gains as-is.
   }
 }
 
