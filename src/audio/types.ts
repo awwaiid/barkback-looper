@@ -49,6 +49,7 @@ export type WorkletCommand =
   | { type: 'setMonitor'; value: number }
   | { type: 'getBuffer'; track: number; reqId: number }
   | { type: 'getMix'; reqId: number }
+  | { type: 'getStems'; reqId: number }
   | { type: 'loadBuffer'; track: number; l: ArrayBuffer; r: ArrayBuffer }
   | { type: 'setRecAction'; value: 'rec-play' | 'rec-overdub' }
   | { type: 'setAutoRec'; enabled: boolean; threshold: number }
@@ -84,6 +85,15 @@ export interface BufferReply {
   l: ArrayBuffer;
   r: ArrayBuffer;
   sampleRate: number;
+}
+
+export interface StemsReply {
+  type: 'stems';
+  reqId: number;
+  sampleRate: number;
+  // One entry per track; null for empty tracks. Each is rolled out to the
+  // longest track's length and anchor-aligned so all stems share a timeline.
+  stems: ({ l: ArrayBuffer; r: ArrayBuffer } | null)[];
 }
 
 export const NUM_TRACKS = 4;

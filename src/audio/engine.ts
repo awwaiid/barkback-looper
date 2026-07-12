@@ -3,6 +3,7 @@ import type {
   EngineState,
   LatencyTestReply,
   MetersData,
+  StemsReply,
   TrackAction,
   WorkletCommand,
 } from './types.ts';
@@ -30,6 +31,7 @@ export class LooperEngine {
   cb: EngineCallbacks = {};
   ready = false;
   bufferRequests = new Map<number, (reply: BufferReply) => void>();
+  stemsRequests = new Map<number, (reply: StemsReply) => void>();
   latencyTestRequests = new Map<number, (reply: LatencyTestReply) => void>();
   nextReqId = 1;
 
@@ -71,6 +73,12 @@ export class LooperEngine {
         const pending = this.bufferRequests.get(d.reqId);
         if (pending) {
           this.bufferRequests.delete(d.reqId);
+          pending(d);
+        }
+      } else if (d.type === 'stems') {
+        const pending = this.stemsRequests.get(d.reqId);
+        if (pending) {
+          this.stemsRequests.delete(d.reqId);
           pending(d);
         }
       } else if (d.type === 'latencyTestResult') {
@@ -183,6 +191,22 @@ export class LooperEngine {
 
   getMixBuffer() {
     return this.requestBuffer({ type: 'getMix', reqId: 0 });
+  }
+
+  getStems(): Promise<StemsReply> {
+    if (!this.node) return Promise.reject(new Error('engine not started'));
+    const reqId = this.nextReqId++;
+    return new Promise<StemsReply>((resolve, reject) => {
+      const to = setTimeout(() => {
+        this.stemsRequests.delete(reqId);
+        reject(new Error('stems request timed out'));
+      }, 10000);
+      this.stemsRequests.set(reqId, (reply) => {
+        clearTimeout(to);
+        resolve(reply);
+      });
+      this.send({ type: 'getStems', reqId });
+    });
   }
 
   loadBuffer(track: number, l: ArrayBuffer, r: ArrayBuffer) {

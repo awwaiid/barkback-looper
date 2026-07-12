@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import {
   exportMixWav,
+  exportStems,
   listSessions,
   saveSession,
   loadSession,
@@ -79,6 +80,7 @@ export function SessionPanel() {
           />
           <button className="btn btn-primary" disabled={busy} onClick={doSave}>save to browser</button>
           <button className="btn" disabled={busy} onClick={() => exportMixWav()}>bounce mix → .wav</button>
+          <button className="btn" disabled={busy} onClick={() => exportStems()}>export stems (4 × .wav)</button>
         </div>
         {err && <p className="status-err">{err}</p>}
       </div>

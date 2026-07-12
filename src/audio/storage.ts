@@ -28,6 +28,18 @@ async function getSessionDir(name: string, create: boolean): Promise<FileSystemD
   }
 }
 
+// Save a blob to a file the browser downloads directly (no picker).
+function anchorDownload(blob: Blob, name: string): void {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
 // Trigger a download in the user's browser. Uses File System Access API picker
 // when available, falls back to a blob link.
 export async function downloadBlob(blob: Blob, suggestedName: string): Promise<void> {
@@ -46,20 +58,17 @@ export async function downloadBlob(blob: Blob, suggestedName: string): Promise<v
       if (e?.name === 'AbortError') return;
     }
   }
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = suggestedName;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  anchorDownload(blob, suggestedName);
 }
 
-function timestampedName(prefix: string): string {
+function timestamp(): string {
   const d = new Date();
   const pad = (n: number) => n.toString().padStart(2, '0');
-  return `${prefix}-${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}.wav`;
+  return `${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
+}
+
+function timestampedName(prefix: string, ext = 'wav'): string {
+  return `${prefix}-${timestamp()}.${ext}`;
 }
 
 export async function exportTrackWav(track: number): Promise<void> {
@@ -79,6 +88,54 @@ export async function exportTrackWav(track: number): Promise<void> {
   }
   const blob = encodeWav16(l, r, reply.sampleRate);
   await downloadBlob(blob, timestampedName(`track${track + 1}`));
+}
+
+// Export every non-empty track as its own WAV, rolled out to the longest
+// track's length and anchor-aligned so all files share one timeline — drop
+// them into a DAW at 0:00 and they line up as performed. Stems are raw
+// (pre-fader) so levels/effects can be set in the DAW.
+//
+// Where the File System Access API exists, one folder picker drops all files
+// into a chosen folder; otherwise each file downloads separately (the browser
+// may ask to allow multiple downloads).
+export async function exportStems(): Promise<void> {
+  const reply = await engine.getStems();
+  const files: { name: string; blob: Blob }[] = [];
+  reply.stems.forEach((s, i) => {
+    if (!s) return;
+    files.push({
+      name: `track${i + 1}.wav`,
+      blob: encodeWav16(new Float32Array(s.l), new Float32Array(s.r), reply.sampleRate),
+    });
+  });
+  if (files.length === 0) {
+    alert('No audio to export yet.');
+    return;
+  }
+
+  const folder = `barkback-stems-${timestamp()}`;
+  const w = window as any;
+  if (typeof w.showDirectoryPicker === 'function') {
+    try {
+      const dir = await w.showDirectoryPicker({ mode: 'readwrite' });
+      const sub = await dir.getDirectoryHandle(folder, { create: true });
+      for (const f of files) {
+        const fh = await sub.getFileHandle(f.name, { create: true });
+        const writable = await fh.createWritable();
+        await writable.write(f.blob);
+        await writable.close();
+      }
+      return;
+    } catch (e: any) {
+      if (e?.name === 'AbortError') return;
+      // Any other failure falls through to per-file downloads below.
+    }
+  }
+
+  // Fallback: download each stem separately, prefixed so they group together.
+  for (const f of files) {
+    anchorDownload(f.blob, `${folder}-${f.name}`);
+  }
 }
 
 export async function exportMixWav(): Promise<void> {

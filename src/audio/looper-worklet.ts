@@ -205,6 +205,9 @@ class LooperProcessor extends AudioWorkletProcessor {
       case 'getMix':
         this.sendMix(msg.reqId);
         break;
+      case 'getStems':
+        this.sendStems(msg.reqId);
+        break;
       case 'loadBuffer':
         this.loadBuffer(msg.track, msg.l, msg.r);
         break;
@@ -298,6 +301,63 @@ class LooperProcessor extends AudioWorkletProcessor {
       { type: 'buffer', reqId, track: 'mix', l: mixL.buffer, r: mixR.buffer, sampleRate },
       [mixL.buffer, mixR.buffer],
     );
+  }
+
+  // Roll one track out to `total` frames, anchor-aligned exactly the way
+  // process() plays it (buffer[0] lands at master position `anchor`), so all
+  // stems share the master-loop timeline. Raw / pre-fader — the gain fader is
+  // intentionally NOT applied so the stems are source material to re-level in
+  // a DAW. Loops shorter than `total` repeat; a long one-shot plays through.
+  renderStem(t: Track, total: number): { l: Float32Array; r: Float32Array } {
+    const l = new Float32Array(total);
+    const r = new Float32Array(total);
+    const bufL = t.bufL!;
+    const bufR = t.bufR!;
+    const len = bufL.length;
+    const M = this.masterFrames;
+    const a = t.anchor;
+    const cyc = t.cycles;
+    for (let i = 0; i < total; i++) {
+      const ph = i % M;
+      const masterLoop = Math.floor(i / M);
+      const virtualPos = a === 0 ? ph : (ph - a + M) % M;
+      const cycleIndex = masterLoop % cyc;
+      const effCycle = a !== 0 && ph < a ? (cycleIndex - 1 + cyc) % cyc : cycleIndex;
+      const trackPos = (effCycle * M + virtualPos) % len;
+      l[i] = bufL[trackPos];
+      r[i] = bufR[trackPos];
+    }
+    return { l, r };
+  }
+
+  sendStems(reqId: number) {
+    if (this.masterFrames === 0) {
+      this.port.postMessage({ type: 'stems', reqId, sampleRate, stems: [] });
+      return;
+    }
+    // Timeline length = the longest track (e.g. a full vocal take), so every
+    // stem is the same length and the shorter loops repeat underneath it.
+    let total = this.masterFrames;
+    for (const t of this.tracks) {
+      if (t.bufL) total = Math.max(total, t.bufL.length);
+    }
+    const cap = sampleRate * MAX_LOOP_SECONDS;
+    if (total > cap) total = cap;
+
+    const stems: ({ l: ArrayBuffer; r: ArrayBuffer } | null)[] = [];
+    const transfers: ArrayBuffer[] = [];
+    for (const t of this.tracks) {
+      if (!t.bufL || !t.bufR) {
+        stems.push(null);
+        continue;
+      }
+      const { l, r } = this.renderStem(t, total);
+      const lb = l.buffer as ArrayBuffer;
+      const rb = r.buffer as ArrayBuffer;
+      stems.push({ l: lb, r: rb });
+      transfers.push(lb, rb);
+    }
+    this.port.postMessage({ type: 'stems', reqId, sampleRate, stems }, transfers);
   }
 
   loadBuffer(idx: number, lBuf: ArrayBuffer, rBuf: ArrayBuffer) {
