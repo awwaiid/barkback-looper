@@ -1,8 +1,16 @@
-import { engine, useAudioStore } from './store.ts';
+import { engine, useAudioStore, setTrackGain } from './store.ts';
 import { encodeWav16, decodeWav } from './wav.ts';
 import { NUM_TRACKS } from './types.ts';
+import { currentSettings, updateSettings, type Settings } from '../settings/settings.ts';
 
 const SESSION_DIR = 'sessions';
+const META_FILE = 'session.json';
+
+interface SessionMeta {
+  version: 1;
+  settings: Settings;
+  trackGains: number[];
+}
 
 async function getRoot(): Promise<FileSystemDirectoryHandle | null> {
   if (!('storage' in navigator) || !navigator.storage.getDirectory) return null;
@@ -135,6 +143,17 @@ export async function saveSession(name: string): Promise<void> {
     await w.write(blob);
     await w.close();
   }
+
+  // Persist settings + per-track gains so the session restores exactly.
+  const meta: SessionMeta = {
+    version: 1,
+    settings: currentSettings(),
+    trackGains: useAudioStore.getState().tracks.map(t => t.gain),
+  };
+  const metaFile = await dir.getFileHandle(META_FILE, { create: true });
+  const mw = await metaFile.createWritable();
+  await mw.write(new Blob([JSON.stringify(meta)], { type: 'application/json' }));
+  await mw.close();
 }
 
 export async function loadSession(name: string): Promise<void> {
@@ -152,6 +171,23 @@ export async function loadSession(name: string): Promise<void> {
     } catch {
       // missing track is fine
     }
+  }
+
+  // Restore settings + per-track gains if this session has them. Applied
+  // after loading buffers so the gains win over the loaded-track snapshot.
+  try {
+    const fh = await dir.getFileHandle(META_FILE, { create: false });
+    const meta = JSON.parse(await (await fh.getFile()).text()) as Partial<SessionMeta>;
+    if (meta.settings && typeof meta.settings === 'object') {
+      updateSettings(meta.settings);
+    }
+    if (Array.isArray(meta.trackGains)) {
+      meta.trackGains.forEach((g, i) => {
+        if (i < NUM_TRACKS && typeof g === 'number') setTrackGain(i, g);
+      });
+    }
+  } catch {
+    // Older sessions have no metadata — leave current settings/gains as-is.
   }
 }
 
