@@ -1,4 +1,4 @@
-import { engine } from './store.ts';
+import { engine, useAudioStore } from './store.ts';
 import { encodeWav16, decodeWav } from './wav.ts';
 import { NUM_TRACKS } from './types.ts';
 
@@ -60,7 +60,16 @@ export async function exportTrackWav(track: number): Promise<void> {
     alert(`Track ${track + 1} is empty.`);
     return;
   }
-  const blob = encodeWav16(new Float32Array(reply.l), new Float32Array(reply.r), reply.sampleRate);
+  // The raw track buffer is stored at unity; bake in the track's volume
+  // fader so the bounce matches what you hear (the mix bounce already does).
+  const l = new Float32Array(reply.l);
+  const r = new Float32Array(reply.r);
+  const gain = useAudioStore.getState().tracks[track]?.gain ?? 1;
+  if (gain !== 1) {
+    for (let i = 0; i < l.length; i++) l[i] *= gain;
+    for (let i = 0; i < r.length; i++) r[i] *= gain;
+  }
+  const blob = encodeWav16(l, r, reply.sampleRate);
   await downloadBlob(blob, timestampedName(`track${track + 1}`));
 }
 
