@@ -771,6 +771,8 @@ html, body, #root {
 }
 .setting-row input[type=range] { flex: 1; max-width: 240px; }
 .setting-row.disabled-row { opacity: 0.5; cursor: default; }
+/* Keep buttons at their natural width — let the message beside them wrap. */
+.setting-row > .btn { flex: none; white-space: nowrap; }
 
 .target-table th, .target-table td { text-align: center; }
 .target-table td:first-child, .target-table th:first-child { text-align: left; }
