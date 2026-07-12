@@ -236,34 +236,84 @@ export class LooperEngine {
 function analyzeLatencyTest(reply: LatencyTestReply): LatencyTestResult {
   const data = new Float32Array(reply.buffer);
   const sr = reply.sampleRate;
+  const TONE_HZ = 1000;
+
   // Skip the first 1 ms to ignore any inline electrical crosstalk.
   const skip = Math.floor(sr * 0.001);
-  let peakIdx = -1;
-  let peak = 0;
-  for (let i = skip; i < data.length; i++) {
-    const v = Math.abs(data[i]);
-    if (v > peak) {
-      peak = v;
-      peakIdx = i;
+
+  // Detect the 1 kHz test tone specifically, not just the loudest sample.
+  // A plain amplitude peak fires on mic self-noise or room sound, so on
+  // headphones — where the mic never hears the click — it would report a
+  // bogus latency. A sliding Goertzel filter measures 1 kHz energy per
+  // window; requiring that energy to clear both an absolute floor and the
+  // ambient level makes "nothing heard" fail correctly.
+  const win = Math.max(8, Math.floor(sr * 0.005)); // ~tone burst length
+  const hop = Math.max(1, Math.floor(win / 4));
+  const k = Math.round((win * TONE_HZ) / sr);
+  const coeff = 2 * Math.cos((2 * Math.PI * k) / win);
+
+  const mags: number[] = [];
+  const starts: number[] = [];
+  for (let start = skip; start + win <= data.length; start += hop) {
+    let s0 = 0;
+    let s1 = 0;
+    for (let i = 0; i < win; i++) {
+      const s = data[start + i] + coeff * s0 - s1;
+      s1 = s0;
+      s0 = s;
+    }
+    const power = s0 * s0 + s1 * s1 - coeff * s0 * s1;
+    mags.push((2 * Math.sqrt(Math.max(0, power))) / win); // ~tone amplitude
+    starts.push(start);
+  }
+
+  if (mags.length === 0) {
+    return { success: false, roundTripMs: 0, peakLevel: 0, reason: 'Capture too short to analyze.' };
+  }
+
+  let peakMag = 0;
+  let peakWin = -1;
+  for (let i = 0; i < mags.length; i++) {
+    if (mags[i] > peakMag) {
+      peakMag = mags[i];
+      peakWin = i;
     }
   }
-  // Threshold is generous so quiet pickup still registers.
-  if (peak < 0.01 || peakIdx < 0) {
+  // Robust ambient 1 kHz level: median across all windows.
+  const sortedMags = mags.slice().sort((a, b) => a - b);
+  const ambient = sortedMags[Math.floor(sortedMags.length / 2)] || 1e-9;
+
+  if (peakWin < 0 || peakMag < 0.01 || peakMag < ambient * 8) {
     return {
       success: false,
       roundTripMs: 0,
-      peakLevel: peak,
-      reason: 'No impulse detected. Place the mic closer to the speaker, raise the input gain, and try again.',
+      peakLevel: peakMag,
+      reason:
+        'No test tone detected. On headphones the mic can’t hear the click — ' +
+        'switch to speakers (or just leave compensation at 0). Otherwise place ' +
+        'the mic near the speaker and raise the input gain.',
     };
   }
-  // Refine: walk back from peak to find the threshold-crossing onset, so we
-  // measure first-arrival rather than the loudest reflection.
-  const onsetThreshold = Math.max(0.005, peak * 0.25);
-  let onsetIdx = peakIdx;
-  for (let i = peakIdx; i >= skip; i--) {
-    if (Math.abs(data[i]) >= onsetThreshold) onsetIdx = i;
-    else break;
+
+  // The 5 ms Goertzel window matches the 5 ms burst, so the 1 kHz energy
+  // peaks when the window start aligns with the tone's arrival. Use that
+  // window start as the onset, refined with parabolic interpolation of the
+  // magnitude curve for sub-hop precision. (Walking back over raw samples is
+  // unreliable here — the tone's own zero-crossings trip up an amplitude
+  // threshold, and in noise there is no clean onset to find.)
+  let onsetIdx = starts[peakWin];
+  if (peakWin > 0 && peakWin < mags.length - 1) {
+    const a = mags[peakWin - 1];
+    const b = mags[peakWin];
+    const c = mags[peakWin + 1];
+    const denom = a - 2 * b + c;
+    if (denom !== 0) {
+      const delta = (0.5 * (a - c)) / denom; // fraction of a hop, ~[-1, 1]
+      onsetIdx += Math.round(delta * hop);
+    }
   }
+  onsetIdx = Math.max(0, onsetIdx);
+
   const ms = (onsetIdx / sr) * 1000;
-  return { success: true, roundTripMs: ms, peakLevel: peak };
+  return { success: true, roundTripMs: ms, peakLevel: peakMag };
 }

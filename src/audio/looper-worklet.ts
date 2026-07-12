@@ -606,7 +606,7 @@ class LooperProcessor extends AudioWorkletProcessor {
     const monitor = this.monitor;
 
     // ---- Acoustic latency test fast path ----
-    // Emits a short tone burst on output, records input for 500 ms,
+    // Emits a short 1 kHz tone burst on output, records 150 ms of input,
     // then ships the captured buffer back to the main thread for analysis.
     if (this.testPhase === 'running' && this.testBuffer) {
       for (let i = 0; i < block; i++) {
