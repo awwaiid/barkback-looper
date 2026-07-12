@@ -1100,13 +1100,16 @@ input[type=range]::-moz-range-thumb {
 
 .repo-link {
   margin-left: auto;
+  display: inline-flex;
+  align-items: center;
   color: var(--text-mute);
   text-decoration: none;
-  border-bottom: 1px solid transparent;
 }
-.repo-link:hover {
-  color: var(--accent);
-  border-bottom-color: var(--accent);
+.repo-link:hover { color: var(--accent); }
+.repo-icon {
+  width: 18px;
+  height: 18px;
+  display: block;
 }
 
 .muted { color: var(--text-mute); }
